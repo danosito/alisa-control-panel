@@ -30,7 +30,7 @@ function homePanel(): Panel {
     place("led", 0, 16, 16, 16),
     place("bluetooth", 16, 16, 16, 16),
     place("terminal", 32, 16, 16, 16),
-    place("metrics", 48, 16, 16, 16, { chart: false }),
+    place("metrics", 48, 16, 16, 16),
   ] };
 }
 

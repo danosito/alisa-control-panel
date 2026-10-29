@@ -89,10 +89,13 @@ export const visualizerWidget: WidgetDefinition<Config> = {
       const w = waterfall.getContext("2d")!;
       const step = 2;
       w.drawImage(waterfall, -step, 0);
+      w.fillStyle = "#05070a";
+      w.fillRect(waterfall.width - step, 0, step, waterfall.height);
       const rows = bands.length;
       for (let i = 0; i < rows; i++) {
         const v = bands[i]!;
-        w.fillStyle = v < 0.04 ? "#05070a" : color(v, Math.min(1, 0.15 + v));
+        // Squared: quiet bands fade to black, peaks stand out (spectrogram look).
+        w.fillStyle = v < 0.04 ? "#05070a" : color(v, v * v);
         const y0 = height - ((i + 1) * height) / rows, y1 = height - (i * height) / rows;
         w.fillRect(waterfall.width - step, y0, step, y1 - y0 + 1);
       }

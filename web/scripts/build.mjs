@@ -1,21 +1,22 @@
 // Builds web/src into a single self-contained HTML file at ../src/index.html,
 // which the Zig server embeds at compile time. Usage: node scripts/build.mjs [--watch]
 import { build, context } from "esbuild";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(here, "..");
 const srcDir = path.join(webRoot, "src");
-const kit = process.argv.includes("--kit");
-// --kit builds the widget kit (fixture data, every widget at every size) into
-// web/dist/kit.html. It is a dev artefact and is never embedded in the binary.
-const outFile = kit ? path.join(webRoot, "dist", "kit.html") : path.resolve(webRoot, "..", "src", "index.html");
+// --kit: widget kit (every widget at every size on fixture data) -> web/dist/kit.html
+// --demo: the whole interface on fixture data, no station -> web/dist/demo.html
+// Both are dev artefacts and are never embedded in the binary.
+const mode = process.argv.includes("--kit") ? "kit" : process.argv.includes("--demo") ? "demo" : "app";
+const outFile = mode === "app" ? path.resolve(webRoot, "..", "src", "index.html") : path.join(webRoot, "dist", `${mode}.html`);
 const watch = process.argv.includes("--watch");
 
 const jsOptions = {
-  entryPoints: [path.join(srcDir, kit ? "kit/main.ts" : "main.ts")],
+  entryPoints: [path.join(srcDir, mode === "app" ? "main.ts" : `${mode}/main.ts`)],
   bundle: true,
   write: false,
   format: "iife",
@@ -57,6 +58,11 @@ async function bundleOnce() {
   const html = assemble(template, outputText(cssResult), outputText(jsResult));
   await mkdir(path.dirname(outFile), { recursive: true });
   await writeFile(outFile, html, "utf8");
+  if (mode === "demo") {
+    // The demo's image widget shows the project logo next to demo.html.
+    await mkdir(path.join(webRoot, "dist", "assets"), { recursive: true });
+    await copyFile(path.resolve(webRoot, "..", "docs", "assets", "logo.svg"), path.join(webRoot, "dist", "assets", "logo.svg"));
+  }
   const kb = (Buffer.byteLength(html, "utf8") / 1024).toFixed(1);
   console.log(`panel-web: wrote ${path.relative(process.cwd(), outFile)} (${kb} KiB)`);
 }

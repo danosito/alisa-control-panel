@@ -17,6 +17,8 @@ export interface PanelViewOptions {
   panelId: string;
   api: ApiClient;
   live: LiveClient;
+  /** Demo mode: widgets never open sockets or touch hardware. */
+  preview?: boolean;
   data: () => DataSnapshot;
   refresh: () => void;
   onConfigure: (panelId: string, instanceId: string) => void;
@@ -32,6 +34,7 @@ export class PanelView {
   private mounted = false;
   private editing = false;
   private dragging = false;
+  private columnWatch: ResizeObserver | null = null;
 
   constructor(private readonly options: PanelViewOptions) {
     this.gridRoot = h("div", { class: "grid-stack" });
@@ -63,6 +66,16 @@ export class PanelView {
     for (const instance of panel?.widgets ?? []) this.addItem(instance);
     this.grid.batchUpdate(false);
     this.applyMobileLayout();
+    // Crossing the phone/desktop breakpoint re-applies the matching layout.
+    let columns = this.grid.getColumn();
+    this.columnWatch = new ResizeObserver(() => {
+      const now = this.grid?.getColumn() ?? columns;
+      if (now === columns) return;
+      columns = now;
+      if (now < DESKTOP_COLUMNS) this.applyMobileLayout();
+      else for (const item of this.items.values()) { this.grid!.update(item.el, item.instance.desktop); item.host?.setSize({ w: item.instance.desktop.w, h: item.instance.desktop.h }); }
+    });
+    this.columnWatch.observe(this.gridRoot);
     this.grid.on("dragstart", () => { this.dragging = true; });
     this.grid.on("dragstop", () => { window.setTimeout(() => { this.dragging = false; }, 0); });
     this.grid.on("change", (_e, nodes: GridStackNode[]) => this.persist(nodes));
@@ -111,14 +124,51 @@ export class PanelView {
   private mountItem(item: Item): void {
     if (item.host) return;
     const node = item.el.gridstackNode;
-    item.host = new WidgetHost({ api: this.options.api, live: this.options.live, widgetId: item.instance.widgetId, config: item.instance.config, size: { w: node?.w ?? item.instance.desktop.w, h: node?.h ?? item.instance.desktop.h }, data: this.options.data(), refresh: this.options.refresh });
+    item.host = new WidgetHost({ api: this.options.api, live: this.options.live, preview: this.options.preview, widgetId: item.instance.widgetId, config: item.instance.config, size: { w: node?.w ?? item.instance.desktop.w, h: node?.h ?? item.instance.desktop.h }, data: this.options.data(), refresh: this.options.refresh });
     item.content.append(item.host.el);
   }
 
+  /**
+   * Narrow screens: a saved phone placement wins; everything else is stacked
+   * in desktop reading order (top to bottom, left to right). Wide widgets go
+   * full width keeping their proportions, narrow ones share a row.
+   * (GridStack's own "list" layout reversed the column order.)
+   */
   private applyMobileLayout(): void {
-    if (!this.grid || this.grid.getColumn() >= DESKTOP_COLUMNS) return;
+    if (!this.grid) return;
+    const columns = this.grid.getColumn();
+    if (columns >= DESKTOP_COLUMNS) return;
+    const ordered = [...this.items.values()].sort((a, b) => a.instance.desktop.y - b.instance.desktop.y || a.instance.desktop.x - b.instance.desktop.x);
+    let y = 0, rowX = 0, rowY = 0, rowH = 0;
+    const placements = new Map<Item, Placement>();
+    for (const item of ordered) {
+      if (item.instance.mobile) continue;
+      const d = item.instance.desktop;
+      const definition = findWidget(item.instance.widgetId);
+      const full = d.w > columns / 2;
+      // Scaling by width alone turns a 40×16 chart into a 16×6 strip: keep at
+      // least the standard tile height (or the original one, if smaller).
+      let size = full ? { w: columns, h: Math.max(Math.round((d.h * columns) / d.w), Math.min(d.h, 16)) } : { w: d.w, h: d.h };
+      if (definition) size = constrainSize(definition, size, columns);
+      if (size.w >= columns) {
+        if (rowX > 0) { y = rowY + rowH; rowX = 0; rowH = 0; }
+        placements.set(item, { x: 0, y, ...size });
+        y += size.h;
+      } else {
+        if (rowX === 0) rowY = y;
+        if (rowX + size.w > columns) { rowY += rowH; rowX = 0; rowH = 0; }
+        placements.set(item, { x: rowX, y: rowY, ...size });
+        rowX += size.w; rowH = Math.max(rowH, size.h); y = rowY + rowH;
+      }
+    }
+    // Saved phone placements keep their spots; auto-placed widgets go below them.
+    const savedBottom = Math.max(0, ...ordered.filter((i) => i.instance.mobile).map((i) => i.instance.mobile!.y + i.instance.mobile!.h));
     this.grid.batchUpdate();
-    for (const item of this.items.values()) if (item.instance.mobile) this.grid.update(item.el, item.instance.mobile);
+    for (const item of ordered) {
+      const p = item.instance.mobile ?? { ...placements.get(item)!, y: placements.get(item)!.y + savedBottom };
+      this.grid.update(item.el, p);
+      item.host?.setSize({ w: p.w, h: p.h });
+    }
     this.grid.batchUpdate(false);
   }
 
@@ -220,5 +270,5 @@ export class PanelView {
     return best;
   }
 
-  destroy(): void { this.unmount(); this.grid?.destroy(false); this.el.remove(); }
+  destroy(): void { this.columnWatch?.disconnect(); this.unmount(); this.grid?.destroy(false); this.el.remove(); }
 }

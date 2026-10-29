@@ -1,61 +1,71 @@
-# Alisa Control Panel
+<p align="center">
+  <img src="docs/assets/logo.svg" width="112" alt="">
+</p>
 
-Веб-панель управления рутованной **Яндекс Станцией Лайт 2** (Plum), работающей без
-Алисы: домашний экран из виджетов, который открывается с телефона или компьютера.
+<h1 align="center">Alisa Control Panel</h1>
 
-Сервер — один статический бинарник на Zig (armhf, штатная glibc колонки), фронтенд —
-один HTML-файл, вшитый в бинарник. Никаких зависимостей на станции, кроме штатных
-утилит (`bluetoothctl`/`dbus-send`, `arecord`, `amixer`).
+<p align="center">
+  Домашний экран для рутованной <b>Яндекс Станции Лайт 2</b>, которая живёт без Алисы.<br>
+  Плеер, светомузыка, визуализатор, терминал и мониторинг — в браузере телефона или компьютера.
+</p>
 
-## Возможности
+<p align="center">
+  <img src="https://img.shields.io/badge/Станция-Лайт_2_(Plum)-a855f7" alt="">
+  <img src="https://img.shields.io/badge/Zig-0.15-f7a41d?logo=zig&logoColor=white" alt="">
+  <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white" alt="">
+  <img src="https://img.shields.io/badge/зависимостей_на_станции-0-22c55e" alt="">
+</p>
 
-- **Экраны из виджетов**: свободная сетка, перетаскивание и ресайз с допустимыми
-  пропорциями для каждого виджета, несколько экранов со свайпом, режим редактирования
-  долгим нажатием, раскладки сохраняются в браузере.
-- **Плеер**: что играет по Bluetooth (AVRCP) — трек, исполнитель, обложка (iTunes Search),
-  устройство-источник, таймлайн, управление.
-- **Визуализация** в реальном времени: столбики, зеркало, LED-блоки, осциллограф, круг,
-  водопад; источник — то, что играет колонка, или микрофон.
-- **Подсветка**: цвет, яркость и режимы, которые работают на самой станции, даже с
-  закрытой страницей — дыхание, радуга, свеча и светомузыка (пульс, спектр, бит, поток).
-- **Микрофон**: уровни и спектр с PDM-микрофонов напрямую, без стека Яндекса.
-- **Bluetooth**: сопряжение, подключение, отключение, «забыть».
-- **Терминал**: настоящий PTY (xterm.js) в виджете, можно задать стартовую команду (`btop`).
-- **Мониторинг**: CPU, RAM, температура, сеть с историей; Wi-Fi, флеш, аптайм, нагрузка.
-- **Громкость**, часы, текст, картинка.
-- **Вход** по паролю или passkey; **HTTP** или **HTTPS**.
+![Главная](docs/screenshots/home.webp)
 
-Свой виджет — один файл: [docs/widgets.md](docs/widgets.md).
+## Что внутри
 
-## Что нужно
+- 🎵 **Плеер** — что играет по Bluetooth с телефона или ПК: обложка, источник, таймлайн, управление
+- 🌈 **Визуализатор** в реальном времени — шесть режимов, звук берётся прямо с выхода колонки
+- 💡 **Подсветка кольца** — цвет, дыхание, радуга, свеча и светомузыка; работает на станции, даже когда вкладка закрыта
+- 🎙 **Микрофоны** — уровни и спектр с PDM-массива, без стека Яндекса
+- 🖥 **Терминал** — настоящий root-shell (xterm.js), хоть `btop` на весь экран
+- 📊 **Мониторинг**, Bluetooth, громкость, часы, текст, картинки
+- 🧩 **Экраны собираете сами**: перетаскивание, ресайз, свайп между экранами; каждый виджет перестраивается под свой размер — от строки до узкой колонки
+- 🔐 Вход по **паролю** или **passkey**, HTTP или HTTPS
 
-- Станция Лайт 2 с root по SSH (см. [hackalice.me](https://hackalice.me)) и Entware.
-  Терминалу нужен `/opt/bin/bash` (`opkg install bash`) или выберите в настройках виджета `sh`.
-- Алиса (quasar) остановлена: панель сама работает с микрофонами, подсветкой и Bluetooth.
-- На компьютере для сборки: [Zig 0.15.2](https://ziglang.org/download/) и Node.js 20+.
+| | |
+|---|---|
+| ![Музыка](docs/screenshots/music.webp) | ![Мониторинг](docs/screenshots/monitoring.webp) |
+| **Музыка** — плеер, визуализаторы, громкость, свет | **Мониторинг** — ресурсы, система, `btop`, микрофон |
 
-## Быстрый старт (HTTP + пароль, в домашней сети)
+![Режимы визуализатора](docs/screenshots/visualizer-modes.webp)
+<p align="center"><sub>Столбики · зеркало · LED-блоки · осциллограф · круг · водопад</sub></p>
+
+| | |
+|---|---|
+| ![Редактирование](docs/screenshots/edit.webp) | ![Настройки виджета](docs/screenshots/settings.webp) |
+| Долгое нажатие — режим редактирования и каталог виджетов | У каждого виджета свои настройки |
+
+<p align="center">
+  <img src="docs/screenshots/mobile.webp" width="430" alt="На телефоне">
+  &nbsp;
+  <img src="docs/screenshots/login.webp" width="320" alt="Вход">
+</p>
+
+## Быстрый старт
+
+Нужны станция с root по SSH ([hackalice.me](https://hackalice.me)) и Entware, на компьютере — [Zig 0.15.2](https://ziglang.org/download/) и Node.js 20+.
 
 ```sh
-cp deploy.env.example deploy.env      # HOST=root@<IP станции>, при необходимости SSH_KEY
+cp deploy.env.example deploy.env     # HOST=root@<IP станции>
 (cd web && npm ci)
-scripts/deploy.sh                     # сборка, установка, запуск
+scripts/deploy.sh                    # собрать, залить, запустить
 ```
 
-Первый деплой кладёт на станцию `/data/opt/etc/alisa-panel/panel.env` из
-[deploy/panel.env.example](deploy/panel.env.example). Впишите туда пароль и перезапустите:
+Впишите пароль в `/data/opt/etc/alisa-panel/panel.env` на станции, `/etc/init.d/S98alisa-panel restart` — и открывайте **`http://<IP станции>:8080`**.
 
-```sh
-ssh root@<IP> 'vi /data/opt/etc/alisa-panel/panel.env && /etc/init.d/S98alisa-panel restart'
-```
+Посмотреть без станции: `cd web && npm run demo && python3 -m http.server -d dist`, затем открыть http://localhost:8000/demo.html.
 
-Панель — на `http://<IP станции>:8080`. Лог — `/data/opt/etc/alisa-panel/alisa-panel.log`.
+<details>
+<summary><b>HTTPS и passkey</b></summary>
 
-## HTTPS и passkey
-
-Passkey (WebAuthn) браузеры разрешают только по HTTPS на доменном имени. Нужен домен,
-указывающий на станцию (хоть в локальном DNS), и сертификат для него — например,
-Let's Encrypt через DNS-01. Файлы положите в `/data/opt/etc/alisa-panel/tls/`:
+Passkey работает только по HTTPS на доменном имени. Положите сертификат в `/data/opt/etc/alisa-panel/tls/` (`fullchain.pem`, `privkey.pem`) и укажите в `panel.env`:
 
 ```sh
 PANEL_TLS=on
@@ -64,65 +74,53 @@ PANEL_AUTH=passkey
 PANEL_ORIGIN=https://panel.example.com
 ```
 
-Первый вход создаёт passkey владельца; дальше вход только им. Пароль по HTTPS тоже
-работает (`PANEL_AUTH=password`). Вместо встроенного TLS можно поставить панель за
-обратный прокси: `PANEL_TLS=off`, прокси терминирует HTTPS.
+Первый вход создаёт passkey владельца. Можно и без встроенного TLS: `PANEL_TLS=off` за обратным прокси.
+</details>
 
-## Настройки (`panel.env`)
+<details>
+<summary><b>Все настройки <code>panel.env</code></b></summary>
 
-| Переменная | По умолчанию | Назначение |
+| Переменная | По умолчанию | |
 |---|---|---|
-| `PANEL_NAME` | `Станция` | имя в интерфейсе и в запросе passkey |
+| `PANEL_NAME` | `Станция` | имя в интерфейсе |
 | `PANEL_AUTH` | `passkey` с TLS, иначе `password` | способ входа |
-| `PANEL_PASSWORD` | — | пароль (≥ 8 символов) для `password` |
-| `PANEL_TLS` | `auto` | `on`/`off`/`auto` (включён, если есть сертификат и ключ) |
-| `PANEL_PORT` | `443` с TLS, `8080` без | порт |
+| `PANEL_PASSWORD` | — | пароль, от 8 символов |
+| `PANEL_TLS` | `auto` | `on` / `off` / `auto` — включён, если есть сертификат |
+| `PANEL_PORT` | `443` / `8080` | порт |
 | `PANEL_BIND` | `0.0.0.0` | адрес |
-| `PANEL_TLS_CERT`, `PANEL_TLS_KEY` | `<data>/tls/fullchain.pem`, `privkey.pem` | сертификат |
-| `PANEL_ORIGIN`, `PANEL_RP_ID` | — | адрес панели и домен для passkey |
+| `PANEL_TLS_CERT`, `PANEL_TLS_KEY` | `tls/fullchain.pem`, `tls/privkey.pem` | сертификат |
+| `PANEL_ORIGIN`, `PANEL_RP_ID` | — | адрес и домен для passkey |
 
-Ошибка в настройках не даёт серверу стартовать, причина пишется в лог.
+Ошибка в настройках не даёт серверу стартовать — причина в логе `/data/opt/etc/alisa-panel/alisa-panel.log`.
+</details>
 
-## Что где на станции
+<details>
+<summary><b>Что где на станции</b></summary>
 
-| Путь | Что |
+| | |
 |---|---|
-| `/data/opt/bin/alisa-panel` | сервер |
-| `/data/opt/bin/alisa-panel-supervise` | перезапуск при падении, сохранение core dump |
-| `/data/opt/bin/alisa-panel-btguard` | сторож Bluetooth-звука ([docs/bluetooth-audio.md](docs/bluetooth-audio.md)) |
+| `/data/opt/bin/alisa-panel` | сервер: один бинарник, интерфейс вшит внутрь |
+| `/data/opt/bin/alisa-panel-supervise` | перезапуск при падении, core dump для `scripts/coredump.sh` |
+| `/data/opt/bin/alisa-panel-btguard` | сторож Bluetooth-звука — [почему он нужен](docs/bluetooth-audio.md) |
 | `/etc/init.d/S98alisa-panel` | автозапуск |
-| `/data/opt/etc/alisa-panel/` | `panel.env`, вход (`auth.json`, `session`), подсветка, `tls/`, лог |
+| `/data/opt/etc/alisa-panel/` | настройки, вход, подсветка, сертификаты, лог |
 | `/data/opt/share/alisa-panel/assets/` | файлы для `/assets/*`, например `logo.png` для виджета «Картинка» |
+</details>
 
-Имя установки задаётся `APP` в `deploy.env`: так на одной станции можно держать свою
-раскладку путей.
+## Свой виджет
 
-## Разработка
+Один файл в `web/src/widgets/library/` и одна строка регистрации — каталог, настройки, ресайз и сохранение раскладки подхватят его сами. Пример и описание API — в **[docs/widgets.md](docs/widgets.md)**.
 
 ```sh
 cd web
-npm run watch        # пересборка src/index.html при изменениях
-npm run preview      # локальный сервер с mock API (PANEL_BACKEND=http://<IP>:8080 — прокси на станцию)
-npm run kit          # web/dist/kit.html: все виджеты во всех размерах на фейковых данных
-npm run check        # проверка типов
-cd .. && zig build test                 # тесты разбора BlueZ, анализатора, цветов
-scripts/coredump.sh --bt                # бэктрейс последнего падения со станции
+npm run watch     # пересборка интерфейса
+npm run kit       # web/dist/kit.html — каждый виджет во всех размерах на фейковых данных
+npm run demo      # web/dist/demo.html — весь интерфейс без станции
+npm run check     # типы
 ```
 
-Сборка сервера вручную: `npm --prefix web run build && zig build -Dtarget=arm-linux-gnueabihf.2.30 -Doptimize=ReleaseSafe`
-(фронтенд вшивается в бинарник, поэтому сначала он).
+## Важно
 
-## Безопасность
+Терминал — это root на станции. Не выставляйте панель в интернет без входа; снаружи — только HTTPS + passkey или VPN.
 
-- Виджет «Терминал» — это root-shell на станции. Не открывайте панель в интернет без
-  входа; для доступа извне используйте passkey и HTTPS или VPN.
-- Пароль сравнивается по SHA-256 в постоянное время; после 5 неудач вход блокируется на 30 с.
-- Сессия хранится в `sessionStorage` вкладки и в `session` на станции (переживает
-  перезапуск сервера). Выход — в меню профиля.
-
-## Сторонний код
-
-[passcay](https://github.com/uzyn/passcay) (WebAuthn, MIT, лежит в `vendor/passcay`),
-[tls.zig](https://github.com/ianic/tls.zig), [xterm.js](https://xtermjs.org),
-[GridStack](https://gridstackjs.com), [uPlot](https://github.com/leeoniya/uPlot),
-[iro.js](https://iro.js.org).
+Внутри: [passcay](https://github.com/uzyn/passcay) (WebAuthn, MIT), [tls.zig](https://github.com/ianic/tls.zig), [xterm.js](https://xtermjs.org), [GridStack](https://gridstackjs.com), [uPlot](https://github.com/leeoniya/uPlot), [iro.js](https://iro.js.org). Подробности про Bluetooth-звук и macOS — в [docs/bluetooth-audio.md](docs/bluetooth-audio.md).

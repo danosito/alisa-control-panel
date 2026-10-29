@@ -5,8 +5,11 @@ import type { DashboardSnapshot, Metrics } from "../api/types";
 import type { DataSnapshot } from "./types";
 
 function fakeHistory(): Metrics[] {
+  let seed = 7;
+  const noise = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5; // deterministic
+  let cpu = 16;
   return Array.from({ length: 120 }, (_, i) => ({
-    cpu_percent: Math.max(2, 18 + 14 * Math.sin(i / 7) + 9 * Math.sin(i / 2.3)),
+    cpu_percent: (cpu = Math.min(80, Math.max(4, cpu + noise() * 10 + (i % 37 === 0 ? 30 : 0) - (cpu - 18) * 0.12))),
     ram_used_mb: 150 + Math.round(12 * Math.sin(i / 19)),
     ram_total_mb: 237,
     temp_c: 50 + 3 * Math.sin(i / 30),
@@ -36,7 +39,7 @@ export function fixtureData(): DataSnapshot {
   };
 }
 
-export function fixtureLive(): LiveClient { return createFakeLiveClient(); }
+export function fixtureLive(recording?: string): LiveClient { return createFakeLiveClient(recording); }
 
 /** An ApiClient that never touches the network. */
 export function fixtureApi(): ApiClient {

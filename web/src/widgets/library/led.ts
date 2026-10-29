@@ -152,12 +152,14 @@ export const ledWidget: WidgetDefinition<Config> = {
       for (const b of modeButtons) b.classList.toggle("w-led__chip--active", b.dataset.mode === s.mode);
       const music = s.mode === "music";
       const small = ctx.tier === "tiny" || ctx.tier === "slim" || ctx.tier === "compact";
+      // A 16×16 tile keeps the wheel big: sliders and hints from 24 units up.
+      const roomy = !small && ctx.tier !== "regular";
       algoRow.hidden = !ctx.config.modes || !music || ctx.tier === "tiny";
-      algoHint.hidden = algoRow.hidden || small;
+      algoHint.hidden = algoRow.hidden || !roomy;
       ALGOS.forEach((a, i) => algoButtons[i]!.classList.toggle("w-led__chip--active", a.value === s.algo));
       algoHint.textContent = ALGOS.find((a) => a.value === s.algo)?.hint ?? "";
       const animated = s.mode !== "static" && s.mode !== "off";
-      tuning.hidden = !ctx.config.tuning || !animated || small;
+      tuning.hidden = !ctx.config.tuning || !animated || !roomy;
       sensField.hidden = !music;
       if (document.activeElement !== speed) speed.value = String(s.speed);
       if (document.activeElement !== sensitivity) sensitivity.value = String(s.sensitivity);

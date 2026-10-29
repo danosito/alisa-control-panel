@@ -134,8 +134,17 @@ export function createLiveClient(): LiveClient {
   };
 }
 
-/** Synthetic frames for catalog previews and the widget kit. */
-export function createFakeLiveClient(): LiveClient {
+/**
+ * Fake stream for catalog previews, the widget kit and the demo. Playback
+ * frames replay `recording` (base64 of concatenated 188-byte frames) when
+ * given, otherwise both sources are synthetic.
+ */
+export function createFakeLiveClient(recording?: string): LiveClient {
+  const recorded: ArrayBuffer[] = [];
+  if (recording) {
+    const bytes = Uint8Array.from(atob(recording), (c) => c.charCodeAt(0));
+    for (let i = 0; i + 188 <= bytes.length; i += 188) recorded.push(bytes.slice(i, i + 188).buffer);
+  }
   return {
     connected: true,
     subscribe(topics, handlers) {
@@ -145,6 +154,11 @@ export function createFakeLiveClient(): LiveClient {
         const t = (performance.now() - started) / 1000;
         for (const source of ["playback", "mic"] as const) {
           if (!topics[source]) continue;
+          if (source === "playback" && recorded.length) {
+            const frame = decodeFrame(recorded[Math.floor(t * 30) % recorded.length]!);
+            if (frame) handlers.frame?.(frame);
+            continue;
+          }
           const beatPhase = (t * 2.1) % 1;
           const bands = new Float32Array(48).map((_, i) => Math.max(0, Math.min(1, 0.75 - i / 80 + 0.25 * Math.sin(t * 3 + i / 3) + (i < 10 ? 0.4 * Math.exp(-beatPhase * 6) : 0) - (source === "mic" ? 0.35 : 0))));
           const wave = new Float32Array(128).map((_, i) => 0.7 * Math.sin(i / 5 + t * 9) * Math.sin(i / 40 + t));

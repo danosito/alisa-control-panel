@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#1f1436"/>
+      <stop offset="1" stop-color="#0b0d11"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset=".5" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2f3a"/>
+      <stop offset="1" stop-color="#12161d"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- station body -->
+  <ellipse cx="256" cy="350" rx="150" ry="40" fill="#07080b" opacity=".6"/>
+  <path d="M106 236v92c0 26 67 46 150 46s150-20 150-46v-92z" fill="url(#body)"/>
+  <ellipse cx="256" cy="236" rx="150" ry="44" fill="#1b2029"/>
+  <!-- LED ring: glow + line -->
+  <ellipse cx="256" cy="236" rx="118" ry="32" fill="none" stroke="url(#ring)" stroke-width="20" filter="url(#glow)" opacity=".9"/>
+  <ellipse cx="256" cy="236" rx="118" ry="32" fill="none" stroke="url(#ring)" stroke-width="9"/>
+  <!-- sound waves -->
+  <g fill="none" stroke="url(#ring)" stroke-linecap="round" stroke-width="12" opacity=".85">
+    <path d="M196 150q60-44 120 0"/>
+    <path d="M160 112q96-72 192 0" opacity=".55"/>
+  </g>
+</svg>

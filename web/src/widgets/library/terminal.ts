@@ -1,6 +1,7 @@
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 import { wsProtocols } from "../../api/storage";
+import { demoBtop, demoShell } from "./terminalDemo";
 import { h } from "../../ui/dom";
 import type { WidgetContext, WidgetDefinition } from "../types";
 
@@ -90,11 +91,29 @@ export const terminalWidget: WidgetDefinition<Config> = {
     let resizeTimer: number | undefined;
     const observer = new ResizeObserver(() => {
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => { if (!socket && !connection) connect(); else sendResize(); }, 60);
+      resizeTimer = window.setTimeout(() => { if (ctx.preview) { drawPreview(); return; } if (!socket && !connection) connect(); else sendResize(); }, 60);
     });
     observer.observe(surface);
+    // A terminal mounted on an off-screen panel cannot measure its font, so
+    // fit() keeps 80x24: refit when it scrolls into view.
+    const visibility = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      if (ctx.preview) drawPreview(); else if (socket) sendResize();
+    });
+    visibility.observe(surface);
 
-    if (ctx.preview) term.write("\x1b[1;32mroot\x1b[2;37m@Yandex-Lite-gen2\x1b[0m:\x1b[1;34m~\x1b[0m \x1b[1;31m#\x1b[0m btop\r\n\x1b[2mCPU ▁▂▃▅▇▅▃▂▁  12%   MEM 158M/237M\x1b[0m\r\n");
+    // Preview/demo: no PTY. Draw a static screen for the current size
+    // (redrawn whenever the grid settles on a new size).
+    let previewSize = "";
+    const drawPreview = () => {
+      if (!ctx.preview || !measure()) return;
+      const btop = ctx.config.command.trim().startsWith("btop");
+      const key = `${term.cols}x${term.rows}:${btop}`;
+      if (key === previewSize) return;
+      previewSize = key;
+      term.reset();
+      term.write(btop ? `\x1b[?25l${demoBtop(term.cols, term.rows)}` : demoShell());
+    };
 
     return {
       update(next) {
@@ -104,7 +123,7 @@ export const terminalWidget: WidgetDefinition<Config> = {
         if (prev.config.blink !== next.config.blink) term.options.cursorBlink = next.config.blink;
         if (connection && (connection.shell !== next.config.shell || connection.command !== next.config.command)) { term.reset(); connect(); }
       },
-      destroy() { observer.disconnect(); window.clearTimeout(resizeTimer); disconnect(); term.dispose(); },
+      destroy() { observer.disconnect(); visibility.disconnect(); window.clearTimeout(resizeTimer); disconnect(); term.dispose(); },
     };
   },
 };

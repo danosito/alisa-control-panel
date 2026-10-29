@@ -21,7 +21,7 @@ const EDIT_ICON = '<path d="m4 20 4.2-1 9.9-9.9a2.1 2.1 0 0 0-3-3L5.2 16z"/><pat
 const USER_ICON = '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>';
 const LONG_PRESS_MS = 550;
 
-export function createWorkspace(api: ApiClient, live: LiveClient, options: { onLogout: () => void; onRefresh: () => void; owner?: string }): Workspace {
+export function createWorkspace(api: ApiClient, live: LiveClient, options: { onLogout: () => void; onRefresh: () => void; owner?: string; preview?: boolean }): Workspace {
   const store = new PanelStore();
   let data: DataSnapshot = { capabilities: null, state: null, metrics: null, history: [], devices: [], media: null, system: null };
   let editing = false;
@@ -47,7 +47,7 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
     for (const [id, view] of views) if (!ids.has(id)) { view.destroy(); views.delete(id); }
     for (const panel of store.state.panels) {
       if (views.has(panel.id)) continue;
-      const view = new PanelView({ store, panelId: panel.id, api, live, data: () => data, refresh: options.onRefresh, onConfigure: configure, onLayoutChange: () => undefined });
+      const view = new PanelView({ store, panelId: panel.id, api, live, preview: options.preview ?? false, data: () => data, refresh: options.onRefresh, onConfigure: configure, onLayoutChange: () => undefined });
       views.set(panel.id, view);
     }
     // Keep DOM order identical to the store order, then let GridStack measure.
@@ -62,7 +62,7 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
     tabs.replaceChildren(...store.state.panels.map((panel, index) => {
       const tab = h("button", { class: `topbar__tab ${panel.id === activeId ? "topbar__tab--active" : ""}`, type: "button", role: "tab", "aria-selected": String(panel.id === activeId), onclick: () => scrollTo(panel.id, true) }, panel.title);
       if (!editing) return tab;
-      const title = h("input", { class: "topbar__rename", value: panel.title, "aria-label": "Название экрана", size: Math.max(6, panel.title.length) }) as HTMLInputElement;
+      const title = h("input", { class: "topbar__rename", value: panel.title, "aria-label": "Название экрана", size: Math.max(6, panel.title.length + 2) }) as HTMLInputElement;
       title.addEventListener("change", () => { store.renamePanel(panel.id, title.value); renderTabs(); });
       title.addEventListener("focus", () => scrollTo(panel.id, true));
       return h("span", { class: `topbar__tab topbar__tab--edit ${panel.id === activeId ? "topbar__tab--active" : ""}` },

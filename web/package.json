@@ -9,7 +9,8 @@
     "watch": "node scripts/build.mjs --watch",
     "preview": "node scripts/preview.mjs",
     "check": "tsc --noEmit",
-    "kit": "node scripts/build.mjs --kit"
+    "kit": "node scripts/build.mjs --kit",
+    "demo": "node scripts/build.mjs --demo"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

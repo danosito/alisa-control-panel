@@ -1,5 +1,6 @@
 // Widget kit: renders every registered widget at every size tier with fixture
 // data, using the same WidgetHost as production. Build: node scripts/build.mjs --kit
+import { playbackRecording } from "../demo/recording";
 import { fixtureApi, fixtureData, fixtureLive } from "../widgets/fixtures";
 import { WidgetHost } from "../widgets/host";
 import { registerLibrary } from "../widgets/library";
@@ -13,7 +14,7 @@ const TIER_PROBES: GridSize[] = [{ w: 4, h: 2 }, { w: 8, h: 4 }, { w: 16, h: 4 }
 registerLibrary();
 const api = fixtureApi();
 const data = fixtureData();
-const live = fixtureLive();
+const live = fixtureLive(playbackRecording);
 const params = new URLSearchParams(location.search);
 const only = params.get("widget");
 // ?config={"mode":"wave"} applies the same config to every rendered size.
