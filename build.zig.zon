@@ -1,0 +1,13 @@
+.{
+    .name = .alisa_panel,
+    .version = "0.4.2",
+    .dependencies = .{
+        .passcay = .{ .path = "vendor/passcay" },
+        .tls = .{
+            .url = "git+https://github.com/ianic/tls.zig.git?ref=zig-0.15.x#57039ba1c97400c786ef8bf8b7394995fd52fe15",
+            .hash = "tls-0.1.0-ER2e0kZoBQAKITpTPs0jkkeULb5FeQNnU5tGE2lN-wjI",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x578f6407533ad47e,
+}

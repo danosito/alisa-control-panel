@@ -1,0 +1,103 @@
+#!/bin/sh
+# Keeps the station's Bluetooth speaker chain healthy at runtime (Lite 2 / Plum):
+#   bluetoothd -> bluealsa (a2dp-sink only) -> just-works agent
+#              -> bluealsa-aplay -D bluetooth (softvol -> dmix @ 48 kHz -> hw:0,0)
+# Full write-up: docs/bluetooth-audio.md
+#
+# Lessons that this script encodes (2026-10-28, Windows "connects but no sound"):
+#  * bluealsa must offer only the A2DP *sink* role. With a2dp-source + hfp-ag the
+#    speaker looks like a phone: Windows/BlueZ picked the wrong role and the
+#    connection died after a few seconds.
+#  * The just-works agent authorises services for untrusted devices and trusts
+#    them. Its registration dies with bluetoothd, so restart it whenever
+#    bluetoothd's pid changes.
+#  * bluealsa-aplay must play through the "bluetooth" PCM (48 kHz dmix). Raw hw
+#    at the 44.1 kHz A2DP rate leaves the FS2105 amp without a valid clock:
+#    the stream "plays" but the speaker stays silent.
+#  * TDM-B's bit/frame clocks come from mpll1, and only the *capture* path
+#    reprograms it. After one raw 44.1 kHz open, mpll1 stays in the 44.1 kHz
+#    family and every later 48 kHz stream runs at ~44.1 kHz (slow, growing
+#    delay). A short 48 kHz capture on hw:0,0 re-locks it (44230 -> 47987 Hz).
+#    The panel's own loopback analyser captures at 48 kHz too; while it runs, the
+#    arecord below just fails with "busy", which is fine.
+# Every service is (re)started through its stock init script.
+APP=alisa-panel   # rewritten by scripts/deploy.sh
+LOG=/data/opt/etc/$APP/$APP.log
+INTERVAL=10
+BOOT_GRACE=20
+CLK=/sys/kernel/debug/clk/clk_summary
+PCM_STATUS=/proc/asound/card0/pcm0p/sub0/status
+BLUEALSA_ARGS='-p a2dp-sink --sbc-quality=high'
+
+log() { echo "btguard: $(date '+%F %T') $*" >> "$LOG"; }
+first_pid() { pidof "$1" | tr ' ' '\n' | head -n 1; }
+cmdline() { tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null; }
+
+# Let the stock S5x scripts finish at boot before judging anything.
+uptime_s=$(cut -d. -f1 /proc/uptime)
+[ "$uptime_s" -lt 120 ] && sleep "$BOOT_GRACE"
+
+[ -f "$CLK" ] || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+[ -f "$CLK" ] || log "clock summary unavailable ($CLK); mpll1 repair disabled"
+
+# 1 when mpll1 runs at a multiple of 11.2896 MHz (44.1 kHz family), else 0.
+mpll1_in_44k1_family() {
+  awk '$1 == "mpll1" { r = $4; if (r <= 0) { print 0; exit } q = r / 11289600; n = int(q + 0.5); d = q - n; if (d < 0) d = -d; print (n >= 1 && d < 0.001) ? 1 : 0; exit }' "$CLK"
+}
+
+stuck_count=0
+repair_clock() {
+  [ -f "$CLK" ] || return
+  if [ "$(mpll1_in_44k1_family)" != 1 ]; then stuck_count=0; return; fi
+  stuck_count=$((stuck_count + 1))
+  # Idle: fixing is inaudible, do it now. Playing: confirm twice (20 s) first.
+  if grep -q RUNNING "$PCM_STATUS" 2>/dev/null && [ "$stuck_count" -lt 2 ]; then return; fi
+  log "mpll1 stuck in the 44.1 kHz family ($(awk '$1 == "mpll1" { print $4 }' "$CLK") Hz), re-locking TDM-B at 48 kHz"
+  arecord -q -D hw:0,0 -f S16_LE -r 48000 -c 2 -d 1 -t raw /dev/null 2>/dev/null
+  stuck_count=0
+}
+
+last_btd=""
+while true; do
+  btd=$(first_pid bluetoothd)
+  if [ -z "$btd" ]; then
+    log "bluetoothd is down, starting"
+    /etc/init.d/S51bluetoothd start >/dev/null 2>&1
+    sleep 2
+    btd=$(first_pid bluetoothd)
+  fi
+
+  alsa=$(first_pid bluealsa)
+  if [ -z "$alsa" ]; then
+    log "bluealsa is down, starting"
+    /etc/init.d/S52bluealsa start >/dev/null 2>&1
+    sleep 1
+  elif ! cmdline "$alsa" | grep -q -- "$BLUEALSA_ARGS"; then
+    log "bluealsa runs with unexpected roles ($(cmdline "$alsa")), restarting as sink-only"
+    /etc/init.d/S52bluealsa stop >/dev/null 2>&1
+    sleep 1
+    /etc/init.d/S52bluealsa start >/dev/null 2>&1
+    sleep 1
+  fi
+
+  if [ -n "$last_btd" ] && [ -n "$btd" ] && [ "$btd" != "$last_btd" ]; then
+    log "bluetoothd restarted ($last_btd -> $btd), re-registering the agent"
+    /etc/init.d/S54default-bluez-agent stop >/dev/null 2>&1
+  fi
+  if [ -z "$(first_pid just-works-bluez-agent)" ]; then
+    log "pairing agent is down, starting"
+    /etc/init.d/S54default-bluez-agent start >/dev/null 2>&1
+  fi
+
+  aplays=$(pidof bluealsa-aplay)
+  aplay=$(first_pid bluealsa-aplay)
+  if [ -z "$aplay" ] || [ "$aplay" != "$aplays" ] || ! cmdline "$aplay" | grep -q -- '-D bluetooth'; then
+    log "bluealsa-aplay missing, duplicated or not on the 48 kHz 'bluetooth' PCM (${aplays:-none}), restarting"
+    [ -n "$aplays" ] && kill $aplays 2>/dev/null && sleep 1
+    /etc/init.d/S53bluealsa-aplay start >/dev/null 2>&1
+  fi
+
+  repair_clock
+  last_btd=$btd
+  sleep "$INTERVAL"
+done

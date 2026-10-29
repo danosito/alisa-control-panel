@@ -1,0 +1,15 @@
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { color-scheme: dark; -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+::selection { background: #4c1d95; color: #fff; }
+h1, h2, h3, p { margin: 0; }
+button, input { font: inherit; }
+button { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; }
+svg { display: block; width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.skip-link { position: absolute; left: 1rem; top: -4rem; z-index: 5; padding: .5rem .75rem; background: var(--surface); color: var(--text); border: 1px solid var(--line-strong); border-radius: 4px; }
+.skip-link:focus { top: 1rem; }
+.reveal { animation: appear 260ms ease-out both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .reveal { animation: none; } }

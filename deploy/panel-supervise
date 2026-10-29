@@ -1,0 +1,57 @@
+#!/bin/sh
+# Keeps the panel running and preserves crash evidence.
+#  - loads $DIR/panel.env (see panel.env.example) and exports it to the server
+#  - restarts with backoff (1s .. 30s) and logs exit code / signal
+#  - core dumps land in tmpfs, then are gzipped to flash; the binary is NOT
+#    copied (flash is scarce): info records its md5 and scripts/deploy.sh
+#    archives every deployed build locally under zig-out/archive/<md5>/
+#  - keeps the last 2 crashes: /data/opt/var/$APP/cores/<stamp>/{core.gz,info}
+# Debug: scripts/coredump.sh fetches the latest crash and opens gdb.
+APP=alisa-panel   # rewritten by scripts/deploy.sh
+BIN=/data/opt/bin/$APP
+DIR=/data/opt/etc/$APP
+LOG=$DIR/$APP.log
+TMP_CORES=/tmp/$APP-cores
+CORES=/data/opt/var/$APP/cores
+KEEP=2
+
+mkdir -p "$TMP_CORES" "$CORES" "$DIR"
+echo "$TMP_CORES/core.%e.%p.%t" > /proc/sys/kernel/core_pattern
+ulimit -c unlimited
+
+delay=1
+while true; do
+  started=$(date +%s)
+  (
+    set -a
+    PANEL_DATA_DIR=$DIR
+    PANEL_WEB_ROOT=/data/opt/share/$APP
+    [ -f "$DIR/panel.env" ] && . "$DIR/panel.env"
+    exec "$BIN"
+  ) >>"$LOG" 2>&1 </dev/null &
+  child=$!
+  echo "$child" > "$DIR/$APP.child.pid"
+  wait "$child"
+  status=$?
+  now=$(date +%s)
+  if [ "$status" -gt 128 ]; then reason="signal $((status - 128))"; else reason="exit $status"; fi
+  echo "supervisor: $APP pid $child stopped ($reason) after $((now - started))s" >>"$LOG"
+
+  core=$(ls -t "$TMP_CORES"/core.* 2>/dev/null | head -n 1)
+  if [ -n "$core" ]; then
+    stamp=$(date +%Y%m%d-%H%M%S)
+    dir="$CORES/$stamp"
+    mkdir -p "$dir"
+    gzip -c "$core" > "$dir/core.gz" && rm -f "$TMP_CORES"/core.*
+    { echo "reason: $reason"; echo "pid: $child"; echo "uptime: $((now - started))s"; echo "binary_md5: $(md5sum "$BIN" | cut -d' ' -f1)"; tail -n 40 "$LOG"; } > "$dir/info"
+    echo "supervisor: core saved to $dir" >>"$LOG"
+    ls -1dt "$CORES"/*/ 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -rf
+  fi
+
+  [ -f "$DIR/$APP.stop" ] && { rm -f "$DIR/$APP.stop"; exit 0; }
+  # Exit code 2 = invalid configuration: retrying is pointless, check the log.
+  [ "$status" = 2 ] && { echo "supervisor: configuration error, fix $DIR/panel.env and run /etc/init.d/S98$APP restart" >>"$LOG"; exit 1; }
+  # Healthy for a minute -> reset backoff; crash loops back off up to 30s.
+  if [ $((now - started)) -ge 60 ]; then delay=1; else delay=$((delay * 2)); [ "$delay" -gt 30 ] && delay=30; fi
+  sleep "$delay"
+done

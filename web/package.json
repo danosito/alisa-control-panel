@@ -1,0 +1,25 @@
+{
+  "name": "alisa-panel-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Single-file frontend of the panel, built into ../src/index.html",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "preview": "node scripts/preview.mjs",
+    "check": "tsc --noEmit",
+    "kit": "node scripts/build.mjs --kit"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@jaames/iro": "^5.5.2",
+    "gridstack": "^12.3.3",
+    "uplot": "^1.6.32",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0"
+  }
+}

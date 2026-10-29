@@ -1,0 +1,52 @@
+#!/bin/sh
+# Alisa control panel: HTTP(S) server under panel-supervise, plus the optional
+# Bluetooth speaker guard (panel-btguard). The audio chain itself is started by
+# the stock S51..S54 scripts; the guard only repairs it at runtime.
+APP=alisa-panel   # rewritten by scripts/deploy.sh
+SUPERVISE=/data/opt/bin/$APP-supervise
+BTGUARD=/data/opt/bin/$APP-btguard
+DIR=/data/opt/etc/$APP
+LOG=$DIR/$APP.log
+PID=$DIR/$APP.pid
+GUARD_PID=$DIR/$APP-btguard.pid
+
+running() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
+
+# Stops the process recorded in a pid file and waits (up to 5 s) until it is gone.
+stop_pid() {
+  [ -f "$1" ] || return 0
+  pid=$(cat "$1")
+  kill "$pid" 2>/dev/null
+  for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+  rm -f "$1"
+}
+
+start() {
+  mkdir -p "$DIR"
+  # Keep the log bounded on flash.
+  [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ] && tail -c 262144 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+  if [ -x "$BTGUARD" ] && ! running "$GUARD_PID"; then
+    nohup "$BTGUARD" >/dev/null 2>&1 </dev/null &
+    echo $! > "$GUARD_PID"
+  fi
+  if running "$PID"; then return 0; fi
+  rm -f "$PID" "$DIR/$APP.stop"
+  nohup "$SUPERVISE" >/dev/null 2>&1 </dev/null &
+  echo $! > "$PID"
+}
+
+stop() {
+  touch "$DIR/$APP.stop"
+  stop_pid "$GUARD_PID"
+  stop_pid "$PID"
+  [ -f "$DIR/$APP.child.pid" ] && kill "$(cat "$DIR/$APP.child.pid")" 2>/dev/null
+  sleep 1
+  killall "$APP" 2>/dev/null || true
+  rm -f "$PID" "$GUARD_PID" "$DIR/$APP.child.pid" "$DIR/$APP.stop"
+}
+
+case "$1" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; sleep 1; start ;;
+esac

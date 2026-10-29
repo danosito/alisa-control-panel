@@ -1,0 +1,791 @@
+method return time=1793157707.513870 sender=:1.11957 -> destination=:1.12937 serial=14005 reply_serial=2
+   array [
+      dict entry(
+         object path "/org/bluez"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.AgentManager1"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.ProfileManager1"
+               array [
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.Adapter1"
+               array [
+                  dict entry(
+                     string "Address"
+                     variant                         string "00:11:22:33:44:00"
+                  )
+                  dict entry(
+                     string "AddressType"
+                     variant                         string "public"
+                  )
+                  dict entry(
+                     string "Name"
+                     variant                         string "Yandex.Lite-gen2"
+                  )
+                  dict entry(
+                     string "Alias"
+                     variant                         string "Station"
+                  )
+                  dict entry(
+                     string "Class"
+                     variant                         uint32 263188
+                  )
+                  dict entry(
+                     string "Powered"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "PowerState"
+                     variant                         string "on"
+                  )
+                  dict entry(
+                     string "Discoverable"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "DiscoverableTimeout"
+                     variant                         uint32 0
+                  )
+                  dict entry(
+                     string "Pairable"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "PairableTimeout"
+                     variant                         uint32 0
+                  )
+                  dict entry(
+                     string "Discovering"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "UUIDs"
+                     variant                         array [
+                           string "0000110e-0000-1000-8000-00805f9b34fb"
+                           string "00001200-0000-1000-8000-00805f9b34fb"
+                           string "0000110b-0000-1000-8000-00805f9b34fb"
+                           string "0000110c-0000-1000-8000-00805f9b34fb"
+                           string "0000184f-0000-1000-8000-00805f9b34fb"
+                           string "00001800-0000-1000-8000-00805f9b34fb"
+                           string "00001801-0000-1000-8000-00805f9b34fb"
+                           string "00001844-0000-1000-8000-00805f9b34fb"
+                           string "0000180a-0000-1000-8000-00805f9b34fb"
+                           string "0000184d-0000-1000-8000-00805f9b34fb"
+                           string "00001845-0000-1000-8000-00805f9b34fb"
+                        ]
+                  )
+                  dict entry(
+                     string "Modalias"
+                     variant                         string "usb:v1D6Bp0246d0546"
+                  )
+                  dict entry(
+                     string "Roles"
+                     variant                         array [
+                           string "central"
+                           string "peripheral"
+                        ]
+                  )
+                  dict entry(
+                     string "InitialVolume"
+                     variant                         uint16 127
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.BatteryProviderManager1"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.GattManager1"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.AdvertisementMonitorManager1"
+               array [
+                  dict entry(
+                     string "SupportedMonitorTypes"
+                     variant                         array [
+                           string "or_patterns"
+                        ]
+                  )
+                  dict entry(
+                     string "SupportedFeatures"
+                     variant                         array [
+                        ]
+                  )
+               ]
+            )
+            dict entry(
+               string "org.bluez.Media1"
+               array [
+                  dict entry(
+                     string "SupportedUUIDs"
+                     variant                         array [
+                           string "0000110a-0000-1000-8000-00805f9b34fb"
+                           string "0000110b-0000-1000-8000-00805f9b34fb"
+                        ]
+                  )
+               ]
+            )
+            dict entry(
+               string "org.bluez.NetworkServer1"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.LEAdvertisingManager1"
+               array [
+                  dict entry(
+                     string "ActiveInstances"
+                     variant                         byte 0
+                  )
+                  dict entry(
+                     string "SupportedInstances"
+                     variant                         byte 5
+                  )
+                  dict entry(
+                     string "SupportedIncludes"
+                     variant                         array [
+                           string "appearance"
+                           string "local-name"
+                        ]
+                  )
+                  dict entry(
+                     string "SupportedFeatures"
+                     variant                         array [
+                        ]
+                  )
+                  dict entry(
+                     string "SupportedCapabilities"
+                     variant                         array [
+                           dict entry(
+                              string "MaxAdvLen"
+                              variant                                  byte 31
+                           )
+                           dict entry(
+                              string "MaxScnRspLen"
+                              variant                                  byte 31
+                           )
+                        ]
+                  )
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_01"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.Device1"
+               array [
+                  dict entry(
+                     string "Address"
+                     variant                         string "00:11:22:33:44:01"
+                  )
+                  dict entry(
+                     string "AddressType"
+                     variant                         string "public"
+                  )
+                  dict entry(
+                     string "Name"
+                     variant                         string "Desktop PC"
+                  )
+                  dict entry(
+                     string "Alias"
+                     variant                         string "Desktop PC"
+                  )
+                  dict entry(
+                     string "Class"
+                     variant                         uint32 3031300
+                  )
+                  dict entry(
+                     string "Icon"
+                     variant                         string "computer"
+                  )
+                  dict entry(
+                     string "Paired"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Bonded"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Trusted"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Blocked"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "LegacyPairing"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "UUIDs"
+                     variant                         array [
+                           string "00001000-0000-1000-8000-00805f9b34fb"
+                           string "0000110a-0000-1000-8000-00805f9b34fb"
+                           string "0000110b-0000-1000-8000-00805f9b34fb"
+                           string "0000110c-0000-1000-8000-00805f9b34fb"
+                           string "0000110d-0000-1000-8000-00805f9b34fb"
+                           string "0000110e-0000-1000-8000-00805f9b34fb"
+                           string "00001115-0000-1000-8000-00805f9b34fb"
+                           string "0000111e-0000-1000-8000-00805f9b34fb"
+                           string "0000111f-0000-1000-8000-00805f9b34fb"
+                           string "00001200-0000-1000-8000-00805f9b34fb"
+                           string "c7f94713-891e-496a-a0e7-983a0946126e"
+                        ]
+                  )
+                  dict entry(
+                     string "Modalias"
+                     variant                         string "bluetooth:v0006p0001d0A00"
+                  )
+                  dict entry(
+                     string "Adapter"
+                     variant                         object path "/org/bluez/hci0"
+                  )
+                  dict entry(
+                     string "ServicesResolved"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "CurrentRSSI"
+                     variant                         int16 -71
+                  )
+                  dict entry(
+                     string "AFH"
+                     variant                         string "feff3f00000000000000"
+                  )
+                  dict entry(
+                     string "LQ"
+                     variant                         int16 255
+                  )
+                  dict entry(
+                     string "TPL"
+                     variant                         int16 7
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.Network1"
+               array [
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean false
+                  )
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaControl1"
+               array [
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Player"
+                     variant                         object path "/org/bluez/hci0/dev_00_11_22_33_44_01/player0"
+                  )
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_01/fd2"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaTransport1"
+               array [
+                  dict entry(
+                     string "Device"
+                     variant                         object path "/org/bluez/hci0/dev_00_11_22_33_44_01"
+                  )
+                  dict entry(
+                     string "UUID"
+                     variant                         string "0000110B-0000-1000-8000-00805F9B34FB"
+                  )
+                  dict entry(
+                     string "Codec"
+                     variant                         byte 0
+                  )
+                  dict entry(
+                     string "Configuration"
+                     variant                         array of bytes [
+                           21 15 02 35
+                        ]
+                  )
+                  dict entry(
+                     string "State"
+                     variant                         string "active"
+                  )
+                  dict entry(
+                     string "Volume"
+                     variant                         uint16 53
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_01/player0"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaPlayer1"
+               array [
+                  dict entry(
+                     string "Position"
+                     variant                         uint32 57346
+                  )
+                  dict entry(
+                     string "Status"
+                     variant                         string "paused"
+                  )
+                  dict entry(
+                     string "Repeat"
+                     variant                         string "off"
+                  )
+                  dict entry(
+                     string "Shuffle"
+                     variant                         string "off"
+                  )
+                  dict entry(
+                     string "Track"
+                     variant                         array [
+                           dict entry(
+                              string "Title"
+                              variant                                  string "Power"
+                           )
+                           dict entry(
+                              string "Duration"
+                              variant                                  uint32 301603
+                           )
+                           dict entry(
+                              string "Artist"
+                              variant                                  string "Kanye West"
+                           )
+                        ]
+                  )
+                  dict entry(
+                     string "Device"
+                     variant                         object path "/org/bluez/hci0/dev_00_11_22_33_44_01"
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_01/sep55"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaEndpoint1"
+               array [
+                  dict entry(
+                     string "UUID"
+                     variant                         string "0000110a-0000-1000-8000-00805f9b34fb"
+                  )
+                  dict entry(
+                     string "Codec"
+                     variant                         byte 2
+                  )
+                  dict entry(
+                     string "Capabilities"
+                     variant                         array of bytes [
+                           c0 01 8c 83 b3 c1
+                        ]
+                  )
+                  dict entry(
+                     string "Device"
+                     variant                         object path "/org/bluez/hci0/dev_00_11_22_33_44_01"
+                  )
+                  dict entry(
+                     string "DelayReporting"
+                     variant                         boolean true
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_01/sep54"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaEndpoint1"
+               array [
+                  dict entry(
+                     string "UUID"
+                     variant                         string "0000110a-0000-1000-8000-00805f9b34fb"
+                  )
+                  dict entry(
+                     string "Codec"
+                     variant                         byte 255
+                  )
+                  dict entry(
+                     string "Capabilities"
+                     variant                         array of bytes [
+                           4f 00 00 00 01 00 22
+                        ]
+                  )
+                  dict entry(
+                     string "Device"
+                     variant                         object path "/org/bluez/hci0/dev_00_11_22_33_44_01"
+                  )
+                  dict entry(
+                     string "DelayReporting"
+                     variant                         boolean true
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_01/sep52"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaEndpoint1"
+               array [
+                  dict entry(
+                     string "UUID"
+                     variant                         string "0000110a-0000-1000-8000-00805f9b34fb"
+                  )
+                  dict entry(
+                     string "Codec"
+                     variant                         byte 0
+                  )
+                  dict entry(
+                     string "Capabilities"
+                     variant                         array of bytes [
+                           2b ff 02 35
+                        ]
+                  )
+                  dict entry(
+                     string "Device"
+                     variant                         object path "/org/bluez/hci0/dev_00_11_22_33_44_01"
+                  )
+                  dict entry(
+                     string "DelayReporting"
+                     variant                         boolean true
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_02"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.Device1"
+               array [
+                  dict entry(
+                     string "Address"
+                     variant                         string "00:11:22:33:44:02"
+                  )
+                  dict entry(
+                     string "AddressType"
+                     variant                         string "public"
+                  )
+                  dict entry(
+                     string "Name"
+                     variant                         string "Android Phone"
+                  )
+                  dict entry(
+                     string "Alias"
+                     variant                         string "Android Phone"
+                  )
+                  dict entry(
+                     string "Class"
+                     variant                         uint32 5898764
+                  )
+                  dict entry(
+                     string "Icon"
+                     variant                         string "phone"
+                  )
+                  dict entry(
+                     string "Paired"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Bonded"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Trusted"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Blocked"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "LegacyPairing"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "UUIDs"
+                     variant                         array [
+                           string "00001105-0000-1000-8000-00805f9b34fb"
+                           string "0000110a-0000-1000-8000-00805f9b34fb"
+                           string "0000110c-0000-1000-8000-00805f9b34fb"
+                           string "0000110e-0000-1000-8000-00805f9b34fb"
+                           string "00001112-0000-1000-8000-00805f9b34fb"
+                           string "00001115-0000-1000-8000-00805f9b34fb"
+                           string "00001116-0000-1000-8000-00805f9b34fb"
+                           string "0000111f-0000-1000-8000-00805f9b34fb"
+                           string "0000112f-0000-1000-8000-00805f9b34fb"
+                           string "00001132-0000-1000-8000-00805f9b34fb"
+                           string "00001200-0000-1000-8000-00805f9b34fb"
+                           string "00001800-0000-1000-8000-00805f9b34fb"
+                           string "00001801-0000-1000-8000-00805f9b34fb"
+                           string "00001855-0000-1000-8000-00805f9b34fb"
+                           string "2c040837-7f57-4c0a-afcf-1762af70257c"
+                           string "2c042b0a-7f57-4c0a-afcf-1762af70257c"
+                           string "8fa9c715-bd1f-596c-a1b0-13162b15c892"
+                           string "eaccc419-8bb4-5b95-512c-c7d4df290dc8"
+                        ]
+                  )
+                  dict entry(
+                     string "Modalias"
+                     variant                         string "bluetooth:v00E0p0000d0000"
+                  )
+                  dict entry(
+                     string "Adapter"
+                     variant                         object path "/org/bluez/hci0"
+                  )
+                  dict entry(
+                     string "ServicesResolved"
+                     variant                         boolean false
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.Network1"
+               array [
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean false
+                  )
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaControl1"
+               array [
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean false
+                  )
+               ]
+            )
+         ]
+      )
+      dict entry(
+         object path "/org/bluez/hci0/dev_00_11_22_33_44_03"
+         array [
+            dict entry(
+               string "org.freedesktop.DBus.Introspectable"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.Device1"
+               array [
+                  dict entry(
+                     string "Address"
+                     variant                         string "00:11:22:33:44:03"
+                  )
+                  dict entry(
+                     string "AddressType"
+                     variant                         string "public"
+                  )
+                  dict entry(
+                     string "Name"
+                     variant                         string "MacBook Pro — dan"
+                  )
+                  dict entry(
+                     string "Alias"
+                     variant                         string "MacBook Pro — dan"
+                  )
+                  dict entry(
+                     string "Class"
+                     variant                         uint32 2621708
+                  )
+                  dict entry(
+                     string "Icon"
+                     variant                         string "computer"
+                  )
+                  dict entry(
+                     string "Paired"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Bonded"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Trusted"
+                     variant                         boolean true
+                  )
+                  dict entry(
+                     string "Blocked"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "LegacyPairing"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean false
+                  )
+                  dict entry(
+                     string "UUIDs"
+                     variant                         array [
+                           string "00001000-0000-1000-8000-00805f9b34fb"
+                           string "00001101-0000-1000-8000-00805f9b34fb"
+                           string "0000110a-0000-1000-8000-00805f9b34fb"
+                           string "0000110c-0000-1000-8000-00805f9b34fb"
+                           string "0000110d-0000-1000-8000-00805f9b34fb"
+                           string "0000110e-0000-1000-8000-00805f9b34fb"
+                           string "0000111f-0000-1000-8000-00805f9b34fb"
+                           string "00001200-0000-1000-8000-00805f9b34fb"
+                           string "00001801-0000-1000-8000-00805f9b34fb"
+                           string "1ff31936-572e-4b36-a2bf-b2409b1aa6f4"
+                        ]
+                  )
+                  dict entry(
+                     string "Modalias"
+                     variant                         string "bluetooth:v004Cp4A06d0F80"
+                  )
+                  dict entry(
+                     string "Adapter"
+                     variant                         object path "/org/bluez/hci0"
+                  )
+                  dict entry(
+                     string "ServicesResolved"
+                     variant                         boolean false
+                  )
+               ]
+            )
+            dict entry(
+               string "org.freedesktop.DBus.Properties"
+               array [
+               ]
+            )
+            dict entry(
+               string "org.bluez.MediaControl1"
+               array [
+                  dict entry(
+                     string "Connected"
+                     variant                         boolean false
+                  )
+               ]
+            )
+         ]
+      )
+   ]

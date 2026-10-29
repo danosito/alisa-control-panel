@@ -1,0 +1,8 @@
+@import "xterm/css/xterm.css";
+@import "gridstack/dist/gridstack.min.css";
+@import "uplot/dist/uPlot.min.css";
+@import "./tokens.css";
+@import "./base.css";
+@import "./layout.css";
+@import "./components.css";
+@import "./widgets.css";
