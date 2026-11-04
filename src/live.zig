@@ -21,9 +21,9 @@ const SubscribeMessage = struct { type: []const u8, playback: bool = false, mic:
 
 pub fn handle(ctx: *core.Context, hub: *audio.Hub, req: *std.http.Server.Request) !void {
     ctx.mutex.lock();
-    const authorized = auth.isWebSocketAuthorized(ctx, req);
+    const owner = auth.webSocketSession(ctx, req);
     ctx.mutex.unlock();
-    if (!authorized) {
+    if (owner == null) {
         req.respond("{\"ok\":false,\"error\":\"unauthorized\",\"message\":\"Passkey session required\"}", .{ .status = .unauthorized, .extra_headers = &.{.{ .name = "Content-Type", .value = "application/json" }} }) catch {};
         return;
     }
@@ -35,7 +35,7 @@ pub fn handle(ctx: *core.Context, hub: *audio.Hub, req: *std.http.Server.Request
     try ws.flush();
 
     var sub = Subscription{};
-    const sender = try std.Thread.spawn(.{}, sendLoop, .{ ctx, hub, &ws, &sub });
+    const sender = try std.Thread.spawn(.{}, sendLoop, .{ ctx, hub, &ws, &sub, owner.? });
     defer {
         sub.stopping.store(true, .release);
         sender.join();
@@ -69,13 +69,19 @@ pub fn handle(ctx: *core.Context, hub: *audio.Hub, req: *std.http.Server.Request
     }
 }
 
-fn sendLoop(ctx: *core.Context, hub: *audio.Hub, ws: *std.http.Server.WebSocket, sub: *Subscription) void {
+fn sendLoop(ctx: *core.Context, hub: *audio.Hub, ws: *std.http.Server.WebSocket, sub: *Subscription, owner: [32]u8) void {
+    var epoch = ctx.auth.epoch.load(.acquire);
     var seen: u64 = 0;
     var sent = [2]u64{ 0, 0 };
     const never = std.math.maxInt(u32);
     var sent_media: u32 = never;
     var frame: [audio.frame_len]u8 = undefined;
     while (!sub.stopping.load(.acquire)) {
+        if (!auth.stillSignedIn(ctx, owner, &epoch)) {
+            // 4001: the client treats it as "signed out" and shows the login.
+            ws.writeMessage(&.{ 0x0f, 0xa1 }, .connection_close) catch {};
+            return;
+        }
         seen = hub.waitNewer(seen, 250 * std.time.ns_per_ms);
         for ([_]audio.Source{ .playback, .mic }) |source| {
             const i = @intFromEnum(source);

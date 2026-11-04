@@ -1,5 +1,6 @@
 import { ApiRequestError, ApiUnreachableError, type ApiClient } from "../api/client";
 import { createLiveClient } from "../api/live";
+import { clearPairingFromUrl, pairingCodeFromUrl } from "../api/passkeys";
 import { session } from "../api/storage";
 import type { DashboardSnapshot } from "../api/types";
 import { createAuthScreen } from "../ui/authScreen";
@@ -28,7 +29,9 @@ export function mountApp({ api, root }: AppOptions): App {
   let owner = "";
   const live = createLiveClient();
 
-  function logout(): void {
+  /** Ends the session on the server too (unless it is already gone there). */
+  function logout(serverSide = true): void {
+    if (serverSide && session.get()) void api.logout().catch(() => undefined);
     session.clear();
     window.clearTimeout(timer);
     workspace?.destroy(); workspace = null;
@@ -36,7 +39,7 @@ export function mountApp({ api, root }: AppOptions): App {
   }
 
   function mountAuth(message?: string): void {
-    const screen = createAuthScreen(api, () => mountHome());
+    const screen = createAuthScreen(api, () => mountHome(), { pairingCode: pairingCodeFromUrl() });
     root.replaceChildren(h("div", { class: "app-shell" }, screen.el));
     void api.authStatus().then((status) => { owner = status.owner; screen.setStatus(status); }).catch((error) => screen.setError(describeFailure(error)));
     if (message) screen.setError(message);
@@ -44,7 +47,7 @@ export function mountApp({ api, root }: AppOptions): App {
 
   function mountHome(): void {
     workspace?.destroy();
-    workspace = createWorkspace(api, live, { onLogout: logout, onRefresh: () => void sync(true), owner });
+    workspace = createWorkspace(api, live, { onLogout: () => logout(), onRefresh: () => void sync(true), owner });
     root.replaceChildren(h("div", { class: "app-shell" }, workspace.el));
     void sync(true);
   }
@@ -58,7 +61,7 @@ export function mountApp({ api, root }: AppOptions): App {
     if (due && !inFlight && document.visibilityState === "visible") {
       inFlight = true;
       try { workspace.setData(toData(await api.dashboard())); }
-      catch (error) { if (error instanceof ApiRequestError && error.status === 401) { logout(); return; } }
+      catch (error) { if (error instanceof ApiRequestError && error.status === 401) { logout(false); return; } }
       finally { inFlight = false; }
     }
     timer = window.setTimeout(() => void sync(), workspace.syncIntervalMs() ?? IDLE_CHECK_MS);
@@ -66,6 +69,9 @@ export function mountApp({ api, root }: AppOptions): App {
 
   const onVisibility = () => { if (document.visibilityState === "visible") void sync(true); };
   document.addEventListener("visibilitychange", onVisibility);
+  // The live socket was closed because this device was signed out elsewhere.
+  const onSignedOut = () => { if (workspace) logout(false); };
+  window.addEventListener("panel:signed-out", onSignedOut);
 
   void (async () => {
     try {
@@ -73,11 +79,12 @@ export function mountApp({ api, root }: AppOptions): App {
       owner = status.owner;
       if (status.name) document.title = `${status.name} — панель управления`;
       if (session.get() && status.configured) {
-        try { await api.authSession(); mountHome(); return; } catch { session.clear(); }
+        // Opening a pairing link on an already connected device: nothing to do.
+        try { await api.authSession(); clearPairingFromUrl(); mountHome(); return; } catch { session.clear(); }
       }
       mountAuth();
     } catch (error) { mountAuth(describeFailure(error)); }
   })();
 
-  return { stop() { stopped = true; window.clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); workspace?.destroy(); } };
+  return { stop() { stopped = true; window.clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("panel:signed-out", onSignedOut); workspace?.destroy(); } };
 }

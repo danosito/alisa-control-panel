@@ -1,7 +1,8 @@
 // Demo: the real interface on fake data, no station needed.
 // Build: npm run demo -> web/dist/demo.html (open via any static HTTP server).
 //   demo.html                 workspace (Главная / Мониторинг / Музыка)
-//   demo.html?screen=login    login screen
+//   demo.html?screen=login    login screen (password)
+//   demo.html?screen=signin   passkey sign-in; ?screen=pair  pairing a new device
 import type { Metrics } from "../api/types";
 import { createAuthScreen } from "../ui/authScreen";
 import { h } from "../ui/dom";
@@ -18,9 +19,10 @@ if (image) image.defaultConfig = { ...image.defaultConfig, src: "assets/logo.svg
 const root = document.getElementById("app")!;
 const api = fixtureApi();
 
-if (new URLSearchParams(location.search).get("screen") === "login") {
-  const screen = createAuthScreen(api, () => undefined);
-  screen.setStatus({ configured: true, owner: "", passkeys: 0, mode: "password", name: "Станция" });
+const screenParam = new URLSearchParams(location.search).get("screen");
+if (screenParam === "login" || screenParam === "signin" || screenParam === "pair") {
+  const screen = createAuthScreen(api, () => undefined, { pairingCode: screenParam === "pair" ? "K7Q2MX4D" : null });
+  screen.setStatus({ configured: true, owner: "", passkeys: 1, mode: screenParam === "login" ? "password" : "passkey", name: "Станция" });
   root.replaceChildren(h("div", { class: "app-shell" }, screen.el));
 } else {
   const live = fixtureLive(playbackRecording);

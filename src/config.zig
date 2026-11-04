@@ -32,7 +32,9 @@ pub const Config = struct {
     origin: []const u8,
     rp_id: []const u8,
     auth_path: []const u8,
+    /// Pre-0.5 single session token, migrated into sessions.json.
     session_path: []const u8,
+    sessions_path: []const u8,
     lights_path: []const u8,
 };
 
@@ -117,6 +119,7 @@ pub fn load() !Config {
         .rp_id = rp_id,
         .auth_path = join(data_dir, "auth.json"),
         .session_path = join(data_dir, "session"),
+        .sessions_path = join(data_dir, "sessions.json"),
         .lights_path = join(data_dir, "lights.json"),
     };
 }

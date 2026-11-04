@@ -41,19 +41,34 @@ pub const MediaState = struct {
     streaming: bool = false,
 };
 
-pub const Credential = struct { credential_id: []const u8, public_key: []const u8, sign_count: u32 };
-pub const AuthStore = struct { owner: []const u8 = "", credential: ?Credential = null };
-pub const AuthStatus = struct { configured: bool, owner: []const u8, passkeys: u8, mode: []const u8, name: []const u8 };
-pub const PasswordLoginInput = struct { password: []const u8 };
+/// One registered passkey (auth.json). `id` and `public_key` are base64url.
+pub const Passkey = struct {
+    id: []const u8,
+    public_key: []const u8,
+    sign_count: u32 = 0,
+    /// User-visible name, e.g. "iPhone · Safari".
+    name: []const u8 = "",
+    /// Authenticator model (base64url AAGUID) -> provider name in the UI.
+    aaguid: []const u8 = "",
+    created_s: i64 = 0,
+    last_used_s: i64 = 0,
+};
+pub const AuthStatus = struct { configured: bool, owner: []const u8, passkeys: u32, mode: []const u8, name: []const u8 };
+pub const PasswordLoginInput = struct { password: []const u8, device: []const u8 = "" };
 pub const SessionResponse = struct { ok: bool, session: []const u8 };
 pub const SessionStatus = struct { ok: bool, authenticated: bool };
 pub const PublicKeyParam = struct { type: []const u8, alg: i32 };
 pub const RelyingParty = struct { name: []const u8, id: []const u8 };
 pub const UserEntity = struct { id: []const u8, name: []const u8, displayName: []const u8 };
-pub const RegistrationOptions = struct { challenge: []const u8, rp: RelyingParty, user: UserEntity, pubKeyCredParams: []const PublicKeyParam, authenticatorSelection: struct { residentKey: []const u8, userVerification: []const u8 }, attestation: []const u8 };
+pub const CredentialDescriptor = struct { type: []const u8 = "public-key", id: []const u8 };
+pub const RegistrationOptions = struct { challenge: []const u8, rp: RelyingParty, user: UserEntity, pubKeyCredParams: []const PublicKeyParam, authenticatorSelection: struct { residentKey: []const u8, userVerification: []const u8 }, attestation: []const u8, excludeCredentials: []const CredentialDescriptor };
 pub const LoginOptions = struct { challenge: []const u8, rpId: []const u8, userVerification: []const u8 };
-pub const RegistrationInput = struct { owner: []const u8, attestationObject: []const u8, clientDataJSON: []const u8 };
-pub const LoginInput = struct { credentialId: []const u8, authenticatorData: []const u8, clientDataJSON: []const u8, signature: []const u8 };
+/// `invite`: pairing code from an already signed-in device (not needed for
+/// the first passkey or when the request itself carries a session).
+pub const RegistrationStart = struct { owner: []const u8 = "", invite: []const u8 = "" };
+pub const RegistrationInput = struct { owner: []const u8 = "", invite: []const u8 = "", name: []const u8 = "", attestationObject: []const u8, clientDataJSON: []const u8 };
+/// `device`: label of the browser that signs in ("MacBook · Chrome").
+pub const LoginInput = struct { credentialId: []const u8, authenticatorData: []const u8, clientDataJSON: []const u8, signature: []const u8, device: []const u8 = "" };
 pub const LedInput = struct { r: u8, g: u8, b: u8, brightness: u8 = 255 };
 pub const LedModeInput = struct { mode: ?[]const u8 = null, algo: ?[]const u8 = null, r: ?u8 = null, g: ?u8 = null, b: ?u8 = null, brightness: ?u8 = null, speed: ?u8 = null, sensitivity: ?u8 = null };
 pub const VolumeInput = struct { volume: u8 };
@@ -63,9 +78,8 @@ pub const DashboardSnapshot = struct { health: Health, capabilities: Capabilitie
 
 pub const Context = struct {
     mutex: std.Thread.Mutex = .{},
-    auth_store: AuthStore = .{},
-    pending_challenge: ?[]const u8 = null,
-    session_token: ?[]const u8 = null,
+    /// Passkeys, sessions, challenges, pairing invite (auth.zig).
+    auth: @import("auth.zig").State = .{},
     previous_cpu_total: u64 = 0,
     previous_cpu_idle: u64 = 0,
     previous_net: struct { rx: u64 = 0, tx: u64 = 0, ms: i64 = 0 } = .{},
@@ -88,9 +102,6 @@ pub const Context = struct {
     /// Last /dashboard request (unix seconds; 32-bit ARM has no 64-bit
     /// atomics). Recent requests keep BlueZ polling at 1 Hz.
     last_dashboard_s: std.atomic.Value(u32) = .init(0),
-    /// Failed password logins (brute-force throttle, see auth.passwordLogin).
-    failed_logins: u32 = 0,
-    failed_login_s: i64 = 0,
     /// Wakes the sampler early (after a Bluetooth/media action).
     refresh_requested: std.atomic.Value(bool) = .init(false),
 };

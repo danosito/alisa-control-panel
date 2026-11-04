@@ -49,5 +49,19 @@ export function fixtureApi(): ApiClient {
     health: { ok: true, service: "alisa-panel", version: "kit" },
     capabilities: data.capabilities!, state: data.state!, metrics: data.metrics!, metrics_history: data.history, bluetooth_devices: data.devices, media: data.media!, system: data.system!,
   });
-  return new Proxy({ dashboard }, { get: (target, key) => (key in target ? (target as Record<string, unknown>)[key as string] : ok) }) as unknown as ApiClient;
+  const now = Math.floor(Date.now() / 1000);
+  let invited = false;
+  const devices = async () => ({
+    ok: true, mode: "passkey", owner: "demo", now_s: now, invite: invited ? { code: "K7Q2MX4D", expires_in_s: 540 } : null,
+    passkeys: [
+      { id: "mac", name: "MacBook · Chrome", provider: "iCloud Keychain", created_s: now - 9 * 86400, last_used_s: now - 40, sessions: 1, current: true },
+      { id: "phone", name: "vivo X200 Pro · Chrome", provider: "Google Password Manager", created_s: now - 2 * 86400, last_used_s: now - 3 * 3600, sessions: 1, current: false },
+    ],
+    sessions: [
+      { id: "a1", label: "MacBook · Chrome", passkey: "MacBook · Chrome", created_s: now - 9 * 86400, last_seen_s: now, current: true },
+      { id: "b2", label: "vivo X200 Pro · Chrome", passkey: "vivo X200 Pro · Chrome", created_s: now - 2 * 86400, last_seen_s: now - 3 * 3600, current: false },
+    ],
+  });
+  const invite = async () => { invited = true; return { ok: true, code: "K7Q2MX4D", expires_in_s: 600 }; };
+  return new Proxy({ dashboard, devices, invite }, { get: (target, key) => (key in target ? (target as Record<string, unknown>)[key as string] : ok) }) as unknown as ApiClient;
 }

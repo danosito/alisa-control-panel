@@ -1,5 +1,5 @@
 import { session } from "./storage";
-import type { ApiErrorBody, ApiErrorCode, AuthStatus, DashboardSnapshot, LedState, LightAlgo, LightMode, LoginOptions, RegistrationOptions, SessionResponse } from "./types";
+import type { ApiErrorBody, ApiErrorCode, AuthDevices, AuthStatus, DashboardSnapshot, InviteInfo, LedState, LightAlgo, LightMode, LoginOptions, RegistrationOptions, SessionResponse } from "./types";
 
 export type MediaAction = "play" | "pause" | "next" | "previous" | "stop";
 export interface LedModePatch { mode?: LightMode; algo?: LightAlgo; r?: number; g?: number; b?: number; brightness?: number; speed?: number; sensitivity?: number }
@@ -42,12 +42,23 @@ export interface ApiClient {
   volumeSet(volume: number): Promise<{ ok: boolean; volume: number }>;
   media(action: MediaAction): Promise<{ ok: boolean; action: string }>;
   authStatus(): Promise<AuthStatus>;
-  registrationOptions(owner: string): Promise<RegistrationOptions>;
-  registrationVerify(payload: { owner: string; attestationObject: string; clientDataJSON: string }): Promise<SessionResponse>;
+  /** First passkey: {owner}. New device: {invite}. Signed-in device: {} (another key). */
+  registrationOptions(start: { owner?: string; invite?: string }): Promise<RegistrationOptions>;
+  registrationVerify(payload: { owner?: string; invite?: string; name: string; attestationObject: string; clientDataJSON: string }): Promise<SessionResponse>;
   loginOptions(): Promise<LoginOptions>;
-  loginVerify(payload: { credentialId: string; authenticatorData: string; clientDataJSON: string; signature: string }): Promise<SessionResponse>;
+  loginVerify(payload: { credentialId: string; authenticatorData: string; clientDataJSON: string; signature: string; device: string }): Promise<SessionResponse>;
   /** PANEL_AUTH=password */
-  passwordLogin(password: string): Promise<SessionResponse>;
+  passwordLogin(password: string, device: string): Promise<SessionResponse>;
+  /** Ends this browser's session on the server. */
+  logout(): Promise<unknown>;
+  devices(): Promise<AuthDevices>;
+  /** Pairing code for a new device (10 minutes, single use); {cancel} withdraws it. */
+  invite(): Promise<InviteInfo & { ok: boolean }>;
+  cancelInvite(): Promise<unknown>;
+  renamePasskey(id: string, name: string): Promise<unknown>;
+  removePasskey(id: string): Promise<{ ok: boolean; signed_out: boolean }>;
+  /** One session by id, or every other session when id is omitted. */
+  revokeSessions(id?: string): Promise<{ ok: boolean; revoked: number }>;
   bluetoothAction(action: "pairing/start" | "pairing/stop"): Promise<unknown>;
   bluetoothDeviceAction(action: "connect" | "disconnect" | "remove", address: string): Promise<unknown>;
   /** Generic GET for endpoints that are added to the contract later. */
@@ -127,11 +138,18 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     volumeSet: (volume) => post("/audio/volume", { volume: Math.round(volume) }),
     media: (action) => post(`/media/${action}`, {}),
     authStatus: () => get<AuthStatus>("/auth/status"),
-    registrationOptions: (owner: string) => post<RegistrationOptions>("/auth/register/options", { owner }),
+    registrationOptions: (start) => post<RegistrationOptions>("/auth/register/options", start),
     registrationVerify: (payload) => post<SessionResponse>("/auth/register/verify", payload),
     loginOptions: () => post<LoginOptions>("/auth/login/options", {}),
     loginVerify: (payload) => post<SessionResponse>("/auth/login/verify", payload),
-    passwordLogin: (password) => post<SessionResponse>("/auth/password/login", { password }),
+    passwordLogin: (password, device) => post<SessionResponse>("/auth/password/login", { password, device }),
+    logout: () => post("/auth/logout", {}),
+    devices: () => get<AuthDevices>("/auth/devices"),
+    invite: () => post<InviteInfo & { ok: boolean }>("/auth/invite", {}),
+    cancelInvite: () => post("/auth/invite", { cancel: true }),
+    renamePasskey: (id, name) => post("/auth/passkeys/rename", { id, name }),
+    removePasskey: (id) => post<{ ok: boolean; signed_out: boolean }>("/auth/passkeys/remove", { id }),
+    revokeSessions: (id) => post<{ ok: boolean; revoked: number }>("/auth/sessions/revoke", id ? { id } : {}),
     bluetoothAction: (action) => post(`/bluetooth/${action}`, {}),
     // BlueZ Connect waits for the remote side: allow ~25 s.
     bluetoothDeviceAction: (action, address) => request("POST", `/bluetooth/${action}`, { address }, 30000),

@@ -40,6 +40,8 @@ export interface RegistrationOptions {
   pubKeyCredParams: Array<{ type: string; alg: number }>;
   authenticatorSelection: { residentKey: string; userVerification: string };
   attestation: string;
+  /** Keys already registered: the authenticator will not create a duplicate. */
+  excludeCredentials?: Array<{ type: string; id: string }>;
 }
 
 export interface BluetoothDevice {
@@ -61,6 +63,44 @@ export interface LoginOptions {
 export interface SessionResponse {
   ok: boolean;
   session: string;
+}
+
+/** A registered passkey (one per device or password manager). */
+export interface PasskeyInfo {
+  id: string;
+  name: string;
+  /** Password manager / platform by AAGUID: "iCloud Keychain", "Windows Hello", or "". */
+  provider: string;
+  created_s: number;
+  last_used_s: number;
+  /** Signed-in browsers that use this key. */
+  sessions: number;
+  /** The key this browser signed in with. */
+  current: boolean;
+}
+
+/** A signed-in browser. */
+export interface SessionInfo {
+  id: string;
+  label: string;
+  /** Name of the passkey it signed in with ("" in password mode). */
+  passkey: string;
+  created_s: number;
+  last_seen_s: number;
+  current: boolean;
+}
+
+export interface InviteInfo { code: string; expires_in_s: number }
+
+export interface AuthDevices {
+  ok: boolean;
+  mode: "passkey" | "password";
+  owner: string;
+  passkeys: PasskeyInfo[];
+  sessions: SessionInfo[];
+  invite: InviteInfo | null;
+  /** Server clock, for "5 мин назад" without trusting this device's clock. */
+  now_s: number;
 }
 
 export type LightMode = "off" | "static" | "breathe" | "rainbow" | "candle" | "music";

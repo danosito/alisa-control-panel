@@ -100,9 +100,11 @@ export function createLiveClient(): LiveClient {
       if (!frame) return;
       for (const e of entries) if (e.topics[frame.source]) e.handlers.frame?.(frame);
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (socket === ws) socket = null;
       setConnected(false);
+      // 4001: this session was revoked (signed out on another device).
+      if (event.code === 4001) { window.dispatchEvent(new CustomEvent("panel:signed-out")); return; }
       if (entries.size === 0) return;
       retry = Math.min(retry + 1, 6);
       retryTimer = window.setTimeout(open, 400 * 2 ** retry);

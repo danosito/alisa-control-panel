@@ -2,6 +2,7 @@ import type { ApiClient } from "../api/client";
 import type { LiveClient } from "../api/live";
 import type { DataSnapshot } from "../widgets/types";
 import { findWidget } from "../widgets/registry";
+import { openDevicesDialog } from "./devicesDialog";
 import { h, svgIcon } from "./dom";
 import { createCatalog } from "./panels/catalog";
 import { PanelView } from "./panels/panelView";
@@ -33,6 +34,7 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
   const addScreen = h("button", { class: "topbar__chip", type: "button", onclick: () => { const panel = store.addPanel(); buildViews(); scrollTo(panel.id, false); } }, "+ экран");
   const editButton = h("button", { class: "topbar__icon", type: "button", "aria-label": "Редактировать", title: "Редактировать (долгое нажатие)", onclick: () => setEditing(!editing) }, svgIcon(EDIT_ICON));
   const profileMenu = h("div", { class: "topbar__menu", hidden: true }, h("span", { class: "topbar__owner" }, options.owner ?? "Владелец"),
+    h("button", { type: "button", class: "w-btn", onclick: () => { profileMenu.hidden = true; openDevicesDialog(api, { onSignedOut: options.onLogout }); } }, "Устройства и ключи"),
     h("button", { type: "button", class: "w-btn", onclick: () => { if (confirm("Вернуть экраны и виджеты к раскладке по умолчанию?")) { store.resetLayout(); for (const view of views.values()) view.destroy(); views.clear(); buildViews(); scrollTo(store.active().id, false); } } }, "Сбросить раскладку"),
     h("button", { type: "button", class: "w-btn", onclick: options.onLogout }, "Выйти"));
   const profile = h("div", { class: "topbar__profile" }, h("button", { class: "topbar__icon", type: "button", "aria-label": "Профиль", onclick: () => { profileMenu.hidden = !profileMenu.hidden; } }, svgIcon(USER_ICON)), profileMenu);

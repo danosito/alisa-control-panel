@@ -62,11 +62,12 @@ fn validAddress(address: []const u8) bool {
 
 fn authStatus(ctx: *core.Context, req: *std.http.Server.Request) !void {
     const passkey = core.config.auth == .passkey;
+    const count: u32 = @intCast(ctx.auth.passkeys.items.len);
     return json(req, core.AuthStatus{
         // Password mode is configured by PANEL_PASSWORD; passkey mode by the first registration.
-        .configured = !passkey or ctx.auth_store.credential != null,
-        .owner = ctx.auth_store.owner,
-        .passkeys = if (ctx.auth_store.credential != null) 1 else 0,
+        .configured = !passkey or count > 0,
+        .owner = ctx.auth.owner,
+        .passkeys = count,
         .mode = @tagName(core.config.auth),
         .name = core.config.name,
     }, .ok);
@@ -76,14 +77,19 @@ fn passkeyDisabled(req: *std.http.Server.Request) !void {
     return errorResponse(req, .not_found, "passkey_disabled", "This panel uses password authentication (PANEL_AUTH=password)");
 }
 
+fn sessionResponse(req: *std.http.Server.Request, token: auth.Token) !void {
+    return json(req, core.SessionResponse{ .ok = true, .session = &token }, .ok);
+}
+
 fn passwordLogin(ctx: *core.Context, req: *std.http.Server.Request, arena: std.mem.Allocator) !void {
     if (core.config.auth != .password) return errorResponse(req, .not_found, "password_disabled", "This panel uses passkeys (PANEL_AUTH=passkey)");
     const input = parseBody(core.PasswordLoginInput, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Expected {password}");
-    const session = auth.passwordLogin(ctx, input.password) catch |err| switch (err) {
+    const token = auth.passwordLogin(ctx, input.password, input.device) catch |err| switch (err) {
         error.TooManyAttempts => return errorResponse(req, .too_many_requests, "too_many_attempts", "Too many attempts, wait 30 seconds"),
-        else => return errorResponse(req, .unauthorized, "wrong_password", "Wrong password"),
+        error.WrongPassword => return errorResponse(req, .unauthorized, "wrong_password", "Wrong password"),
+        else => return errorResponse(req, .internal_server_error, "session_failed", "Could not store the session"),
     };
-    return json(req, core.SessionResponse{ .ok = true, .session = session }, .ok);
+    return sessionResponse(req, token);
 }
 
 fn authSession(ctx: *core.Context, req: *std.http.Server.Request) !void {
@@ -93,36 +99,114 @@ fn authSession(ctx: *core.Context, req: *std.http.Server.Request) !void {
 
 fn registerOptions(ctx: *core.Context, req: *std.http.Server.Request, arena: std.mem.Allocator) !void {
     if (core.config.auth != .passkey) return passkeyDisabled(req);
-    if (ctx.auth_store.credential != null) return errorResponse(req, .conflict, "already_configured", "A passkey is already configured");
-    const input = parseBody(struct { owner: []const u8 }, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Owner name is required");
-    const challenge = auth.generateToken() catch return errorResponse(req, .internal_server_error, "challenge_failed", "Could not create challenge");
-    if (ctx.pending_challenge) |old| core.allocator.free(old);
-    ctx.pending_challenge = challenge;
+    const current = auth.currentSession(ctx, req); // headers first: the body read invalidates them
+    const input = parseBody(core.RegistrationStart, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Expected {owner} or {invite}");
+    const begin = auth.beginRegistration(ctx, current, input) catch |err| return switch (err) {
+        error.InviteRequired => errorResponse(req, .forbidden, "invite_required", "Connect this device from one that is already signed in"),
+        error.InvalidInvite => errorResponse(req, .forbidden, "invalid_invite", "The pairing code is wrong or has expired"),
+        error.OwnerRequired => errorResponse(req, .bad_request, "owner_required", "Owner name is required"),
+        error.TooManyPasskeys => errorResponse(req, .conflict, "too_many_passkeys", "Too many passkeys, remove an old one first"),
+    };
+    // Keys already registered: the authenticator refuses to create a duplicate.
+    const exclude = try arena.alloc(core.CredentialDescriptor, ctx.auth.passkeys.items.len);
+    for (ctx.auth.passkeys.items, exclude) |p, *d| d.* = .{ .id = p.id };
     const params = [_]core.PublicKeyParam{ .{ .type = "public-key", .alg = -7 }, .{ .type = "public-key", .alg = -257 } };
-    return json(req, core.RegistrationOptions{ .challenge = challenge, .rp = .{ .name = core.config.name, .id = core.config.rp_id }, .user = .{ .id = "panel-owner", .name = input.owner, .displayName = input.owner }, .pubKeyCredParams = &params, .authenticatorSelection = .{ .residentKey = "required", .userVerification = "required" }, .attestation = "none" }, .ok);
+    const owner = try arena.dupe(u8, begin.owner);
+    return json(req, core.RegistrationOptions{ .challenge = &begin.challenge, .rp = .{ .name = core.config.name, .id = core.config.rp_id }, .user = .{ .id = "panel-owner", .name = owner, .displayName = owner }, .pubKeyCredParams = &params, .authenticatorSelection = .{ .residentKey = "required", .userVerification = "required" }, .attestation = "none", .excludeCredentials = exclude }, .ok);
 }
 
 fn registerVerify(ctx: *core.Context, req: *std.http.Server.Request, arena: std.mem.Allocator) !void {
     if (core.config.auth != .passkey) return passkeyDisabled(req);
     const input = parseBody(core.RegistrationInput, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Invalid WebAuthn response");
-    const session = auth.register(ctx, input) catch |err| return errorResponse(req, .unauthorized, @errorName(err), "Passkey verification failed");
-    return json(req, core.SessionResponse{ .ok = true, .session = session }, .ok);
+    const token = auth.register(ctx, arena, input) catch |err| return switch (err) {
+        error.GrantExpired => errorResponse(req, .forbidden, "invite_expired", "The pairing code was used or has expired"),
+        error.AlreadyRegistered => errorResponse(req, .conflict, "already_registered", "This passkey is already registered"),
+        else => errorResponse(req, .unauthorized, @errorName(err), "Passkey verification failed"),
+    };
+    return sessionResponse(req, token);
 }
 
 fn loginOptions(ctx: *core.Context, req: *std.http.Server.Request) !void {
     if (core.config.auth != .passkey) return passkeyDisabled(req);
-    if (ctx.auth_store.credential == null) return errorResponse(req, .not_found, "not_configured", "Register the first passkey first");
-    const challenge = auth.generateToken() catch return errorResponse(req, .internal_server_error, "challenge_failed", "Could not create challenge");
-    if (ctx.pending_challenge) |old| core.allocator.free(old);
-    ctx.pending_challenge = challenge;
-    return json(req, core.LoginOptions{ .challenge = challenge, .rpId = core.config.rp_id, .userVerification = "required" }, .ok);
+    const challenge = auth.beginLogin(ctx) catch return errorResponse(req, .not_found, "not_configured", "Register the first passkey first");
+    return json(req, core.LoginOptions{ .challenge = &challenge, .rpId = core.config.rp_id, .userVerification = "required" }, .ok);
 }
 
 fn loginVerify(ctx: *core.Context, req: *std.http.Server.Request, arena: std.mem.Allocator) !void {
     if (core.config.auth != .passkey) return passkeyDisabled(req);
     const input = parseBody(core.LoginInput, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Invalid WebAuthn assertion");
-    const session = auth.login(ctx, input) catch |err| return errorResponse(req, .unauthorized, @errorName(err), "Passkey verification failed");
-    return json(req, core.SessionResponse{ .ok = true, .session = session }, .ok);
+    const token = auth.login(ctx, arena, input) catch |err| return errorResponse(req, .unauthorized, @errorName(err), "Passkey verification failed");
+    return sessionResponse(req, token);
+}
+
+const PasskeyView = struct { id: []const u8, name: []const u8, provider: []const u8, created_s: i64, last_used_s: i64, sessions: u32, current: bool };
+const SessionView = struct { id: []const u8, label: []const u8, passkey: []const u8, created_s: i64, last_seen_s: i64, current: bool };
+const InviteView = struct { code: []const u8, expires_in_s: i64 };
+const DevicesView = struct { ok: bool = true, mode: []const u8, owner: []const u8, passkeys: []const PasskeyView, sessions: []const SessionView, invite: ?InviteView, now_s: i64 };
+
+/// Everything the "Устройства и ключи" dialog shows.
+fn devices(ctx: *core.Context, req: *std.http.Server.Request, arena: std.mem.Allocator, current: *auth.Session) !void {
+    const keys = try arena.alloc(PasskeyView, ctx.auth.passkeys.items.len);
+    for (ctx.auth.passkeys.items, keys) |p, *v| {
+        var count: u32 = 0;
+        for (ctx.auth.sessions.items) |s| {
+            if (std.mem.eql(u8, s.passkey, p.id)) count += 1;
+        }
+        v.* = .{ .id = p.id, .name = p.name, .provider = auth.providerName(p.aaguid) orelse "", .created_s = p.created_s, .last_used_s = p.last_used_s, .sessions = count, .current = std.mem.eql(u8, p.id, current.passkey) };
+    }
+    const sessions = try arena.alloc(SessionView, ctx.auth.sessions.items.len);
+    for (ctx.auth.sessions.items, sessions) |*s, *v| {
+        const key = auth.findPasskey(ctx, s.passkey);
+        v.* = .{ .id = try arena.dupe(u8, &auth.sessionId(s)), .label = s.label, .passkey = if (key) |k| k.name else "", .created_s = s.created_s, .last_seen_s = s.last_seen_s, .current = s == current };
+    }
+    const invite: ?InviteView = if (auth.activeInvite(ctx)) |i| .{ .code = try arena.dupe(u8, &i.code), .expires_in_s = auth.inviteRemaining(i) } else null;
+    return json(req, DevicesView{ .mode = @tagName(core.config.auth), .owner = ctx.auth.owner, .passkeys = keys, .sessions = sessions, .invite = invite, .now_s = std.time.timestamp() }, .ok);
+}
+
+/// /api/v1/auth/* routes that need a signed-in session.
+fn accountRoute(ctx: *core.Context, req: *std.http.Server.Request, arena: std.mem.Allocator, action: []const u8) !void {
+    const current = auth.currentSession(ctx, req) orelse return unauthorized(req);
+    const eql = std.mem.eql;
+    if (eql(u8, action, "devices")) return devices(ctx, req, arena, current);
+    if (eql(u8, action, "logout")) {
+        auth.logout(ctx, current) catch return errorResponse(req, .internal_server_error, "save_failed", "Could not store sessions");
+        return json(req, .{ .ok = true }, .ok);
+    }
+    if (eql(u8, action, "sessions/revoke")) {
+        const input = parseBody(struct { id: ?[]const u8 = null }, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Expected {id} or {}");
+        const removed = auth.revokeSessions(ctx, current, input.id) catch return errorResponse(req, .internal_server_error, "save_failed", "Could not store sessions");
+        return json(req, .{ .ok = true, .revoked = removed }, .ok);
+    }
+    if (core.config.auth != .passkey) return passkeyDisabled(req);
+    if (eql(u8, action, "invite")) {
+        const input = parseBody(struct { cancel: bool = false }, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Expected {} or {cancel:true}");
+        if (input.cancel) {
+            auth.cancelInvite(ctx);
+            return json(req, .{ .ok = true }, .ok);
+        }
+        const invite = auth.createInvite(ctx);
+        return json(req, .{ .ok = true, .code = &invite.code, .expires_in_s = auth.inviteRemaining(invite) }, .ok);
+    }
+    if (eql(u8, action, "passkeys/rename")) {
+        const input = parseBody(struct { id: []const u8, name: []const u8 }, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Expected {id, name}");
+        auth.renamePasskey(ctx, input.id, input.name) catch |err| return switch (err) {
+            error.UnknownPasskey => errorResponse(req, .not_found, "unknown_passkey", "No such passkey"),
+            error.EmptyName => errorResponse(req, .bad_request, "empty_name", "Name is empty"),
+            else => errorResponse(req, .internal_server_error, "save_failed", "Could not store passkeys"),
+        };
+        return json(req, .{ .ok = true }, .ok);
+    }
+    if (eql(u8, action, "passkeys/remove")) {
+        const input = parseBody(struct { id: []const u8 }, req, arena) catch return errorResponse(req, .bad_request, "invalid_body", "Expected {id}");
+        const signed_out = eql(u8, input.id, current.passkey);
+        auth.removePasskey(ctx, input.id) catch |err| return switch (err) {
+            error.LastPasskey => errorResponse(req, .conflict, "last_passkey", "The last passkey cannot be removed"),
+            error.UnknownPasskey => errorResponse(req, .not_found, "unknown_passkey", "No such passkey"),
+            else => errorResponse(req, .internal_server_error, "save_failed", "Could not store passkeys"),
+        };
+        return json(req, .{ .ok = true, .signed_out = signed_out }, .ok);
+    }
+    return errorResponse(req, .not_found, "not_found", "Endpoint not found");
 }
 
 const TerminalQuery = struct { cols: u16 = 80, rows: u16 = 24, shell: terminal.Shell = .bash };
@@ -147,9 +231,16 @@ fn parseTerminalQuery(target: []const u8) TerminalQuery {
 }
 
 /// PTY -> WebSocket. Runs until the shell exits or the reader asks it to stop.
-fn terminalPump(session: *terminal.Session, ws: *std.http.Server.WebSocket) void {
+fn terminalPump(ctx: *core.Context, owner: [32]u8, session: *terminal.Session, ws: *std.http.Server.WebSocket) void {
     var buffer: [16 * 1024]u8 = undefined;
+    var epoch = ctx.auth.epoch.load(.acquire);
     while (!session.stopping.load(.acquire)) {
+        // Signed out elsewhere (logout, revoked device): close the shell.
+        if (!auth.stillSignedIn(ctx, owner, &epoch)) {
+            ws.writeMessage("\r\n[signed out]\r\n", .binary) catch {};
+            ws.writeMessage(&.{ 0x0f, 0xa1 }, .connection_close) catch {}; // 4001 = signed out
+            return;
+        }
         const count = session.readInto(&buffer, 100) catch {
             ws.writeMessage("\r\n[shell exited]\r\n", .binary) catch {};
             ws.writeMessage(&.{ 0x03, 0xe8 }, .connection_close) catch {};
@@ -162,15 +253,15 @@ fn terminalPump(session: *terminal.Session, ws: *std.http.Server.WebSocket) void
 
 pub fn handleTerminalWebSocket(ctx: *core.Context, req: *std.http.Server.Request) !void {
     ctx.mutex.lock();
-    const authorized = auth.isWebSocketAuthorized(ctx, req);
+    const owner = auth.webSocketSession(ctx, req);
     ctx.mutex.unlock();
-    if (!authorized) return unauthorized(req);
+    if (owner == null) return unauthorized(req);
     const query = parseTerminalQuery(req.head.target);
     const key = switch (req.upgradeRequested()) { .websocket => |value| value orelse return error.InvalidWebSocket, else => return error.InvalidWebSocket };
     var session = try terminal.Session.spawn(query.shell, query.cols, query.rows);
     var ws = req.respondWebSocket(.{ .key = key, .extra_headers = &.{.{ .name = "Sec-WebSocket-Protocol", .value = auth.ws_protocol }} }) catch |err| { session.close(); return err; };
     ws.flush() catch |err| { session.close(); return err; };
-    const pump = std.Thread.spawn(.{}, terminalPump, .{ &session, &ws }) catch |err| { session.close(); return err; };
+    const pump = std.Thread.spawn(.{}, terminalPump, .{ ctx, owner.?, &session, &ws }) catch |err| { session.close(); return err; };
     defer {
         session.stopping.store(true, .release);
         pump.join();
@@ -216,7 +307,10 @@ pub fn handle(ctx: *core.Context, req: *std.http.Server.Request, arena: std.mem.
     if (eql(u8, target, "/api/v1/auth/login/options")) return loginOptions(ctx, req);
     if (eql(u8, target, "/api/v1/auth/login/verify")) return loginVerify(ctx, req, arena);
     if (eql(u8, target, "/api/v1/auth/password/login")) return passwordLogin(ctx, req, arena);
+    if (std.mem.startsWith(u8, target, "/api/v1/auth/")) return accountRoute(ctx, req, arena, target["/api/v1/auth/".len..]);
     if (eql(u8, target, "/api/v1/dashboard")) {
+        // Device names, track titles and metrics are private too.
+        requireAuth(ctx, req) catch return unauthorized(req);
         ctx.last_dashboard_s.store(@intCast(std.time.timestamp()), .release);
         const history = metrics.history(ctx, arena) catch return errorResponse(req, .internal_server_error, "metrics_unavailable", "Metrics are unavailable");
         const current = if (history.len > 0) history[history.len - 1] else metrics.read(ctx) catch return errorResponse(req, .service_unavailable, "metrics_unavailable", "Metrics are unavailable");
@@ -305,5 +399,5 @@ fn asset(req: *std.http.Server.Request, name: []const u8) !void {
 }
 
 const bluetooth_prefix = "/api/v1/bluetooth/";
-const version = "0.4.2";
+const version = "0.5.0";
 
