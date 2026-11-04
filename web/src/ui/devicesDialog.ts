@@ -1,10 +1,14 @@
-// "Устройства и ключи": passkeys of every device, signed-in browsers, and
-// pairing of a new device by QR code / link / 8-character code.
+// "Устройства и входы": sign-in methods (passkeys and passwords, in any mix),
+// signed-in browsers, and pairing of a new device by QR code / link / code —
+// the new device then picks its own method.
 import { encode } from "uqr";
 import type { ApiClient } from "../api/client";
-import { createPasskey, deviceLabel, formatCode, PasskeyExistsError, passkeyErrorMessage, pairingLink, passkeysSupported } from "../api/passkeys";
-import type { AuthDevices, InviteInfo, PasskeyInfo, SessionInfo } from "../api/types";
-import { h } from "./dom";
+import { createPasskey, deviceLabel, formatCode, PasskeyExistsError, passkeyErrorMessage, pairingLink, passkeyUsable } from "../api/passkeys";
+import type { AuthDevices, CredentialInfo, InviteInfo, SessionInfo } from "../api/types";
+import { h, svgIcon } from "./dom";
+
+const KEY_ICON = '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/>';
+const LOCK_ICON = '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>';
 
 /**
  * QR on a canvas with a whole number of device pixels per module: SVG squares
@@ -47,8 +51,10 @@ const plural = (n: number, one: string, few: string, many: string) => {
 export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => void }): void {
   let state: AuthDevices | null = null;
   let invite: (InviteInfo & { deadline: number }) | null = null;
-  let knownKeys = new Set<string>();
+  let known = new Set<string>();
   let joined = "";
+  /** The "add a password on this device" form is open. */
+  let adding = false;
   let poll: number | undefined;
   let tick: number | undefined;
 
@@ -59,7 +65,7 @@ export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => 
   const dialog = h("dialog", { class: "settings devices" },
     h("div", { class: "settings__form" },
       h("header", { class: "settings__head devices__head" },
-        h("strong", {}, "Устройства и ключи"),
+        h("strong", {}, "Устройства и входы"),
         h("button", { type: "button", class: "devices__close", "aria-label": "Закрыть", onclick: () => close() }, "✕")),
       pairing, status, keys, sessions),
   ) as HTMLDialogElement;
@@ -69,12 +75,12 @@ export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => 
   async function load(): Promise<void> {
     try {
       const next = await api.devices();
-      const fresh = next.passkeys.filter((p) => !knownKeys.has(p.id));
-      if (state && fresh.length > 0) {
-        joined = fresh.map((p) => p.name).join(", ");
+      const fresh = next.credentials.filter((c) => !known.has(c.id));
+      if (state && invite && fresh.length > 0) {
+        joined = fresh.map((c) => c.name).join(", ");
         invite = null;
       }
-      knownKeys = new Set(next.passkeys.map((p) => p.id));
+      known = new Set(next.credentials.map((c) => c.id));
       if (next.invite && !invite && !joined) invite = { ...next.invite, deadline: Date.now() + next.invite.expires_in_s * 1000 };
       if (!next.invite && invite && !joined) invite = null;
       state = next;
@@ -104,8 +110,35 @@ export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => 
     }
   }
 
+  function passwordForm(): HTMLElement {
+    const field = (label: string, control: HTMLElement) => h("label", { class: "devices__field" }, h("span", {}, label), control);
+    const name = h("input", { class: "devices__input", maxlength: "64", placeholder: "Например, Ноутбук" }) as HTMLInputElement;
+    const first = h("input", { class: "devices__input", type: "password", autocomplete: "new-password", placeholder: "От 8 символов" }) as HTMLInputElement;
+    const second = h("input", { class: "devices__input", type: "password", autocomplete: "new-password" }) as HTMLInputElement;
+    void deviceLabel().then((label) => { if (!name.value) name.value = label; });
+    const save = h("button", { type: "submit", class: "w-btn w-btn--active" }, "Сохранить пароль") as HTMLButtonElement;
+    const form = h("form", { class: "devices__form", onsubmit: async (event: Event) => {
+      event.preventDefault();
+      if ([...first.value].length < 8) { first.focus(); say("Пароль — минимум 8 символов.", true); return; }
+      if (first.value !== second.value) { second.select(); say("Пароли не совпадают.", true); return; }
+      save.disabled = true;
+      say("Сохраняю…");
+      try {
+        await api.passwordCreate({ name: name.value.trim() || "Пароль", password: first.value, device: "" });
+        adding = false;
+        say("Пароль добавлен.");
+        await load();
+      } catch (error) { save.disabled = false; say(passkeyErrorMessage(error), true); }
+    } },
+      field("Название", name), field("Пароль", first), field("Ещё раз", second),
+      h("div", { class: "devices__actions" }, save, h("button", { type: "button", class: "w-btn", onclick: () => { adding = false; say(""); render(); } }, "Отмена")));
+    queueMicrotask(() => first.focus());
+    return form;
+  }
+
   function renderPairing(): void {
-    if (!state || state.mode !== "passkey") { pairing.replaceChildren(); return; }
+    if (!state) { pairing.replaceChildren(); return; }
+    if (adding) { pairing.replaceChildren(passwordForm()); return; }
     if (joined) {
       pairing.replaceChildren(h("div", { class: "devices__joined" }, h("strong", {}, "Подключено"), h("span", {}, joined)),
         h("div", { class: "devices__actions" }, h("button", { type: "button", class: "w-btn", onclick: () => { joined = ""; render(); } }, "Готово")));
@@ -113,8 +146,9 @@ export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => 
     }
     if (!invite) {
       pairing.replaceChildren(h("div", { class: "devices__actions" },
-        h("button", { type: "button", class: "w-btn w-btn--active", onclick: () => void startInvite() }, "＋ Подключить устройство"),
-        passkeysSupported() ? h("button", { type: "button", class: "w-btn", title: "Например, второй менеджер паролей или аппаратный ключ", onclick: () => void addKeyHere() }, "Ещё ключ на этом") : null));
+        h("button", { type: "button", class: "w-btn w-btn--active", title: "Новое устройство само выберет: passkey или пароль", onclick: () => void startInvite() }, "＋ Подключить устройство"),
+        passkeyUsable({ passkey_ready: state.passkey_ready, origin: location.origin }) ? h("button", { type: "button", class: "w-btn", title: "Например, второй менеджер паролей или аппаратный ключ", onclick: () => void addKeyHere() }, "＋ Passkey") : null,
+        h("button", { type: "button", class: "w-btn", title: "Пароль для входа с любого устройства", onclick: () => { adding = true; say(""); render(); } }, "＋ Пароль")));
       return;
     }
     const link = pairingLink(invite.code);
@@ -132,7 +166,7 @@ export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => 
       h("div", { class: "devices__how" },
         h("span", {}, "Наведите камеру нового устройства или откройте ссылку:"),
         h("a", { class: "devices__link", href: link, target: "_blank", rel: "noopener" }, link.replace(/^https?:\/\//, "")),
-        h("span", {}, "или введите код на экране входа:"),
+        h("span", {}, "или введите код на экране входа. Там же выберите: passkey или пароль."),
         h("strong", { class: "devices__code" }, formatCode(invite.code)),
         h("span", { class: "devices__hint" }, "Действует ", left, " и подходит один раз."),
         h("div", { class: "devices__actions" },
@@ -140,33 +174,39 @@ export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => 
           h("button", { type: "button", class: "w-btn", onclick: () => { void api.cancelInvite(); invite = null; render(); } }, "Отменить")))));
   }
 
-  function keyRow(p: PasskeyInfo, now: number, only: boolean): HTMLElement {
-    const name = h("input", { class: "devices__name", value: p.name, maxlength: "64", "aria-label": "Название ключа", title: "Нажмите, чтобы переименовать" }) as HTMLInputElement;
+  function credentialRow(c: CredentialInfo, now: number): HTMLElement {
+    const kind = c.type === "passkey" ? "passkey" : "пароль";
+    const name = h("input", { class: "devices__name", value: c.name, maxlength: "64", "aria-label": `Название (${kind})`, title: "Нажмите, чтобы переименовать" }) as HTMLInputElement;
+    const fixed = c.provider === "panel.env";
+    name.readOnly = fixed;
     const save = async () => {
       const value = name.value.trim();
-      if (!value || value === p.name) { name.value = p.name; return; }
-      try { await api.renamePasskey(p.id, value); p.name = value; say("Переименовано."); } catch (error) { name.value = p.name; say(passkeyErrorMessage(error), true); }
+      if (!value || value === c.name) { name.value = c.name; return; }
+      try { await api.renameCredential(c.id, value); c.name = value; say("Переименовано."); } catch (error) { name.value = c.name; say(passkeyErrorMessage(error), true); }
     };
     name.addEventListener("change", () => void save());
-    name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); if (e.key === "Escape") { name.value = p.name; name.blur(); e.stopPropagation(); } });
-    const meta = [p.provider, p.last_used_s ? `вход ${ago(p.last_used_s, now)}` : `создан ${ago(p.created_s, now)}`, p.sessions ? plural(p.sessions, "сеанс", "сеанса", "сеансов") : "нет сеансов"].filter(Boolean).join(" · ");
-    const remove = h("button", { type: "button", class: "devices__remove", disabled: only, title: only ? "Последний ключ удалить нельзя" : "Удалить ключ", "aria-label": `Удалить ключ ${p.name}`, onclick: async () => {
-      const warn = p.current ? "Это ключ, которым вы вошли сейчас: это устройство тоже выйдет." : `Устройства с этим ключом выйдут (${plural(p.sessions, "сеанс", "сеанса", "сеансов")}).`;
-      if (!confirm(`Удалить ключ «${p.name}»? ${warn}\n\nСам passkey останется в менеджере паролей — удалите его там вручную.`)) return;
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); if (e.key === "Escape") { name.value = c.name; name.blur(); e.stopPropagation(); } });
+    const used = c.last_used_s ? `вход ${ago(c.last_used_s, now)}` : c.created_s ? `создан ${ago(c.created_s, now)}` : "";
+    const meta = [kind, fixed ? "задан в panel.env" : c.provider, used, c.sessions ? plural(c.sessions, "сеанс", "сеанса", "сеансов") : "нет сеансов"].filter(Boolean).join(" · ");
+    const remove = h("button", { type: "button", class: "devices__remove", disabled: !c.removable, title: fixed ? "Меняется в panel.env на станции" : c.removable ? "Удалить" : "Последний способ входа удалить нельзя", "aria-label": `Удалить ${kind} ${c.name}`, onclick: async () => {
+      const warn = c.current ? "Вы вошли именно им: это устройство тоже выйдет." : `Устройства, вошедшие им, выйдут (${plural(c.sessions, "сеанс", "сеанса", "сеансов")}).`;
+      const tail = c.type === "passkey" ? "\n\nСам passkey останется в менеджере паролей — удалите его там вручную." : "";
+      if (!confirm(`Удалить ${kind} «${c.name}»? ${warn}${tail}`)) return;
       try {
-        const result = await api.removePasskey(p.id);
+        const result = await api.removeCredential(c.id);
         if (result.signed_out) { close(); options.onSignedOut(); return; }
         await load();
       } catch (error) { say(passkeyErrorMessage(error), true); }
     } }, "✕");
-    return h("li", { class: `devices__row ${p.current ? "devices__row--current" : ""}` },
+    return h("li", { class: `devices__row ${c.current ? "devices__row--current" : ""}` },
+      h("span", { class: "devices__kind", title: kind }, svgIcon(c.type === "passkey" ? KEY_ICON : LOCK_ICON)),
       h("div", { class: "devices__main" }, name, h("span", { class: "devices__meta" }, meta)),
-      p.current ? h("span", { class: "devices__badge" }, "этот") : null,
+      c.current ? h("span", { class: "devices__badge" }, "этот") : null,
       remove);
   }
 
   function sessionRow(s: SessionInfo, now: number): HTMLElement {
-    const meta = [s.current ? "сейчас" : ago(s.last_seen_s, now), s.passkey ? `ключ «${s.passkey}»` : ""].filter(Boolean).join(" · ");
+    const meta = [s.current ? "сейчас" : ago(s.last_seen_s, now), s.credential ? `через «${s.credential}»` : ""].filter(Boolean).join(" · ");
     return h("li", { class: `devices__row ${s.current ? "devices__row--current" : ""}` },
       h("div", { class: "devices__main" }, h("span", { class: "devices__label" }, s.label), h("span", { class: "devices__meta" }, meta)),
       s.current ? h("span", { class: "devices__badge" }, "этот") : h("button", { type: "button", class: "w-btn devices__signout", onclick: async () => {
@@ -178,10 +218,8 @@ export function openDevicesDialog(api: ApiClient, options: { onSignedOut: () => 
     renderPairing();
     if (!state) return;
     const now = state.now_s;
-    if (state.mode === "passkey") {
-      keys.replaceChildren(h("span", { class: "settings__label" }, "Ключи"),
-        h("ul", { class: "devices__list" }, ...state.passkeys.map((p) => keyRow(p, now, state!.passkeys.length <= 1))));
-    } else keys.replaceChildren();
+    keys.replaceChildren(h("span", { class: "settings__label" }, "Способы входа"),
+      h("ul", { class: "devices__list" }, ...state.credentials.map((c) => credentialRow(c, now))));
     const others = state.sessions.filter((s) => !s.current).length;
     const ordered = [...state.sessions].sort((a, b) => Number(b.current) - Number(a.current) || b.last_seen_s - a.last_seen_s);
     const signOutOthers = h("div", { class: "devices__actions" }, h("button", { type: "button", class: "w-btn", onclick: async () => {

@@ -5,6 +5,19 @@ pub const allocator = std.heap.c_allocator;
 /// Runtime configuration, set once in main before any thread starts.
 pub var config: @import("config.zig").Config = undefined;
 
+/// Write to "<path>.tmp", fsync, rename: a power cut never leaves half a file.
+pub fn writeFileAtomic(path: []const u8, body: []const u8) !void {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp = try std.fmt.bufPrint(&buf, "{s}.tmp", .{path});
+    {
+        var file = try std.fs.createFileAbsolute(tmp, .{ .truncate = true, .mode = 0o600 });
+        defer file.close();
+        try file.writeAll(body);
+        file.sync() catch {};
+    }
+    try std.fs.renameAbsolute(tmp, path);
+}
+
 pub const Health = struct { ok: bool, service: []const u8, version: []const u8 };
 pub const ApiError = struct { ok: bool, @"error": []const u8, message: []const u8 };
 pub const AudioCapabilities = struct { volume: bool, analyser: bool };
@@ -53,8 +66,15 @@ pub const Passkey = struct {
     created_s: i64 = 0,
     last_used_s: i64 = 0,
 };
-pub const AuthStatus = struct { configured: bool, owner: []const u8, passkeys: u32, mode: []const u8, name: []const u8 };
+/// A password (auth.json): argon2id PHC string, never the password itself.
+pub const Password = struct { id: []const u8, name: []const u8 = "", hash: []const u8, created_s: i64 = 0, last_used_s: i64 = 0 };
+/// What the login screen offers. `passkey_ready`: PANEL_ORIGIN is set (passkeys
+/// only work on exactly `origin`); `passwords` counts PANEL_PASSWORD too.
+pub const AuthStatus = struct { configured: bool, owner: []const u8, name: []const u8, passkey_ready: bool, origin: []const u8, passkeys: u32, passwords: u32 };
 pub const PasswordLoginInput = struct { password: []const u8, device: []const u8 = "" };
+/// A new password: the first credential ({owner}), a new device ({invite}) or
+/// another password for a signed-in device ({}).
+pub const PasswordCreateInput = struct { owner: []const u8 = "", invite: []const u8 = "", name: []const u8 = "", password: []const u8, device: []const u8 = "" };
 pub const SessionResponse = struct { ok: bool, session: []const u8 };
 pub const SessionStatus = struct { ok: bool, authenticated: bool };
 pub const PublicKeyParam = struct { type: []const u8, alg: i32 };
@@ -74,12 +94,14 @@ pub const LedModeInput = struct { mode: ?[]const u8 = null, algo: ?[]const u8 = 
 pub const VolumeInput = struct { volume: u8 };
 pub const BluetoothAction = struct { address: []const u8 };
 pub const BluetoothDevice = struct { address: []const u8, name: []const u8, paired: bool, connected: bool, trusted: bool = false, icon: []const u8 = "" };
-pub const DashboardSnapshot = struct { health: Health, capabilities: Capabilities, state: State, metrics: Metrics, metrics_history: []const Metrics, bluetooth_devices: []const BluetoothDevice, media: MediaState, system: SystemInfo };
+pub const DashboardSnapshot = struct { health: Health, capabilities: Capabilities, state: State, metrics: Metrics, metrics_history: []const Metrics, bluetooth_devices: []const BluetoothDevice, media: MediaState, system: SystemInfo, layout_revision: u32 };
 
 pub const Context = struct {
     mutex: std.Thread.Mutex = .{},
     /// Passkeys, sessions, challenges, pairing invite (auth.zig).
     auth: @import("auth.zig").State = .{},
+    /// Screens and widgets shared by all devices (layout.zig).
+    layout: @import("layout.zig").Store = .{},
     previous_cpu_total: u64 = 0,
     previous_cpu_idle: u64 = 0,
     previous_net: struct { rx: u64 = 0, tx: u64 = 0, ms: i64 = 0 } = .{},

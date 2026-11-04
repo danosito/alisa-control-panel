@@ -1,11 +1,14 @@
-//! Who may use the panel: passkeys (several devices), sessions and the
-//! pairing invite that lets a signed-in device admit a new one.
+//! Who may use the panel: credentials (passkeys and passwords, in any mix,
+//! typically one per device), sessions, and the pairing invite that lets a
+//! signed-in device admit a new one. PANEL_PASSWORD, if set, is one more
+//! password (id "env") managed in panel.env.
 //!
 //! Files in $PANEL_DATA_DIR (0600, written atomically):
-//!   auth.json      {"owner", "passkeys": [Passkey]}   (v1 {"credential"} migrated)
-//!   sessions.json  [{"hash", "passkey", "label", ...}] SHA-256 of each token only
+//!   auth.json      {"owner", "passkeys": [Passkey], "passwords": [Password]}
+//!                  (v1 {"credential"} migrated; passwords are argon2id hashes)
+//!   sessions.json  [{"hash", "credential", "label", ...}] SHA-256 of each token only
 //!
-//! A new device joins in one of three ways:
+//! A new device gets a passkey or a password in one of three ways:
 //!   - first passkey ever (no invite needed),
 //!   - the request already carries a session (another key on the same device),
 //!   - an 8-character invite created on a signed-in device (QR/link/code,
@@ -47,10 +50,17 @@ fn idle(now: i64, last_seen: i64) bool {
     return wallSane(now) and wallSane(last_seen) and now - last_seen > session_idle_s;
 }
 
+/// id of the PANEL_PASSWORD credential.
+pub const env_password_id = "env";
+const max_passwords = 16;
+/// OWASP's argon2id choice for low memory; ~0.4 s per check on the station.
+const password_params: std.crypto.pwhash.argon2.Params = .{ .t = 3, .m = 12 * 1024, .p = 1 };
+const min_password_len = 8;
+
 pub const Session = struct {
     hash: [32]u8,
-    /// Passkey id this session was opened with; "" in password mode.
-    passkey: []const u8,
+    /// Credential (passkey or password id) this session was opened with.
+    credential: []const u8,
     label: []const u8,
     created_s: i64,
     last_seen_s: i64,
@@ -66,7 +76,10 @@ pub const Invite = struct { code: [invite_len]u8, expires_ms: i64, failures: u8 
 pub const State = struct {
     owner: []const u8 = "",
     passkeys: std.ArrayList(core.Passkey) = .empty,
+    passwords: std.ArrayList(core.Password) = .empty,
     sessions: std.ArrayList(Session) = .empty,
+    /// One argon2 computation at a time (12 MiB each), outside ctx.mutex.
+    hashing: std.Thread.Mutex = .{},
     challenges: [8]?Challenge = @splat(null),
     invite: ?Invite = null,
     /// Bumped on every revocation; long-lived sockets re-check their session.
@@ -99,25 +112,15 @@ pub fn sessionId(session: *const Session) [16]u8 {
 // ---------------------------------------------------------------- persistence
 
 const LegacyCredential = struct { credential_id: []const u8, public_key: []const u8, sign_count: u32 = 0 };
-const AuthFile = struct { owner: []const u8 = "", passkeys: []const core.Passkey = &.{}, credential: ?LegacyCredential = null };
-const SessionRecord = struct { hash: []const u8, passkey: []const u8 = "", label: []const u8 = "", created_s: i64 = 0, last_seen_s: i64 = 0 };
-
-fn writeAtomic(path: []const u8, body: []const u8) !void {
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp = try std.fmt.bufPrint(&buf, "{s}.tmp", .{path});
-    {
-        var file = try std.fs.createFileAbsolute(tmp, .{ .truncate = true, .mode = 0o600 });
-        defer file.close();
-        try file.writeAll(body);
-        file.sync() catch {};
-    }
-    try std.fs.renameAbsolute(tmp, path);
-}
+const AuthFile = struct { owner: []const u8 = "", passkeys: []const core.Passkey = &.{}, passwords: []const core.Password = &.{}, credential: ?LegacyCredential = null };
+/// "passkey": the field name before passwords existed.
+const SessionRecord = struct { hash: []const u8, credential: []const u8 = "", passkey: []const u8 = "", label: []const u8 = "", created_s: i64 = 0, last_seen_s: i64 = 0 };
+const SessionOut = struct { hash: []const u8, credential: []const u8, label: []const u8, created_s: i64, last_seen_s: i64 };
 
 fn writeJson(path: []const u8, value: anytype) !void {
     const body = try std.fmt.allocPrint(A, "{f}", .{std.json.fmt(value, .{ .emit_null_optional_fields = false })});
     defer A.free(body);
-    try writeAtomic(path, body);
+    try core.writeFileAtomic(path, body);
 }
 
 fn readFile(path: []const u8) ?[]u8 {
@@ -127,17 +130,17 @@ fn readFile(path: []const u8) ?[]u8 {
 }
 
 pub fn saveAuth(ctx: *core.Context) !void {
-    try writeJson(core.config.auth_path, AuthFile{ .owner = ctx.auth.owner, .passkeys = ctx.auth.passkeys.items });
+    try writeJson(core.config.auth_path, AuthFile{ .owner = ctx.auth.owner, .passkeys = ctx.auth.passkeys.items, .passwords = ctx.auth.passwords.items });
 }
 
 pub fn saveSessions(ctx: *core.Context) !void {
-    const records = try A.alloc(SessionRecord, ctx.auth.sessions.items.len);
+    const records = try A.alloc(SessionOut, ctx.auth.sessions.items.len);
     defer A.free(records);
     const hexes = try A.alloc([64]u8, ctx.auth.sessions.items.len);
     defer A.free(hexes);
     for (ctx.auth.sessions.items, records, hexes) |*s, *r, *hex| {
         hex.* = std.fmt.bytesToHex(s.hash, .lower);
-        r.* = .{ .hash = hex, .passkey = s.passkey, .label = s.label, .created_s = s.created_s, .last_seen_s = s.last_seen_s };
+        r.* = .{ .hash = hex, .credential = s.credential, .label = s.label, .created_s = s.created_s, .last_seen_s = s.last_seen_s };
         s.saved_seen_s = s.last_seen_s;
     }
     try writeJson(core.config.sessions_path, records);
@@ -154,8 +157,18 @@ fn freePasskey(p: core.Passkey) void {
     A.free(p.aaguid);
 }
 
+fn dupePassword(p: core.Password) !core.Password {
+    return .{ .id = try A.dupe(u8, p.id), .name = try A.dupe(u8, p.name), .hash = try A.dupe(u8, p.hash), .created_s = p.created_s, .last_used_s = p.last_used_s };
+}
+
+fn freePassword(p: core.Password) void {
+    A.free(p.id);
+    A.free(p.name);
+    A.free(p.hash);
+}
+
 fn freeSession(s: Session) void {
-    A.free(s.passkey);
+    A.free(s.credential);
     A.free(s.label);
 }
 
@@ -172,6 +185,7 @@ fn loadAuth(ctx: *core.Context) !void {
     defer parsed.deinit();
     ctx.auth.owner = try A.dupe(u8, parsed.value.owner);
     for (parsed.value.passkeys) |p| try ctx.auth.passkeys.append(A, try dupePasskey(p));
+    for (parsed.value.passwords) |p| try ctx.auth.passwords.append(A, try dupePassword(p));
     if (ctx.auth.passkeys.items.len == 0) if (parsed.value.credential) |legacy| {
         // v1 kept a single passkey; it becomes the first entry of the list.
         try ctx.auth.passkeys.append(A, try dupePasskey(.{ .id = legacy.credential_id, .public_key = legacy.public_key, .sign_count = legacy.sign_count, .name = "Первый ключ" }));
@@ -191,7 +205,7 @@ fn loadSessions(ctx: *core.Context) !void {
         if (r.hash.len != 64) continue;
         _ = std.fmt.hexToBytes(&hash, r.hash) catch continue;
         if (idle(now, r.last_seen_s)) continue;
-        try ctx.auth.sessions.append(A, .{ .hash = hash, .passkey = try A.dupe(u8, r.passkey), .label = try A.dupe(u8, r.label), .created_s = r.created_s, .last_seen_s = r.last_seen_s, .saved_seen_s = r.last_seen_s });
+        try ctx.auth.sessions.append(A, .{ .hash = hash, .credential = try A.dupe(u8, if (r.credential.len > 0) r.credential else r.passkey), .label = try A.dupe(u8, r.label), .created_s = r.created_s, .last_seen_s = r.last_seen_s, .saved_seen_s = r.last_seen_s });
     }
 }
 
@@ -211,7 +225,7 @@ fn migrateLegacySession(ctx: *core.Context) void {
 
 // ---------------------------------------------------------------- sessions
 
-fn addSession(ctx: *core.Context, hash: [32]u8, passkey: []const u8, label: []const u8) !void {
+fn addSession(ctx: *core.Context, hash: [32]u8, credential: []const u8, label: []const u8) !void {
     const now = std.time.timestamp();
     // Drop idle sessions, then the least recently seen one if still full.
     var i: usize = 0;
@@ -226,13 +240,13 @@ fn addSession(ctx: *core.Context, hash: [32]u8, passkey: []const u8, label: []co
         freeSession(ctx.auth.sessions.swapRemove(oldest));
     }
     var buf: [96]u8 = undefined;
-    try ctx.auth.sessions.append(A, .{ .hash = hash, .passkey = try A.dupe(u8, passkey), .label = try A.dupe(u8, cleanLabel(&buf, label, "Браузер")), .created_s = now, .last_seen_s = now, .saved_seen_s = now });
+    try ctx.auth.sessions.append(A, .{ .hash = hash, .credential = try A.dupe(u8, credential), .label = try A.dupe(u8, cleanLabel(&buf, label, "Браузер")), .created_s = now, .last_seen_s = now, .saved_seen_s = now });
     try saveSessions(ctx);
 }
 
-fn createSession(ctx: *core.Context, passkey: []const u8, label: []const u8) !Token {
+fn createSession(ctx: *core.Context, credential: []const u8, label: []const u8) !Token {
     const token = newToken();
-    try addSession(ctx, hashToken(&token), passkey, label);
+    try addSession(ctx, hashToken(&token), credential, label);
     return token;
 }
 
@@ -446,7 +460,7 @@ pub fn checkInvite(ctx: *core.Context, input: []const u8) ?[invite_len]u8 {
 
 fn grantValid(ctx: *core.Context, grant: Grant) bool {
     return switch (grant) {
-        .first => ctx.auth.passkeys.items.len == 0,
+        .first => !configured(ctx),
         .session => |hash| sessionAlive(ctx, hash),
         .invite => |code| if (activeInvite(ctx)) |invite| std.crypto.timing_safe.eql([invite_len]u8, code, invite.code) else false,
     };
@@ -459,24 +473,46 @@ pub fn findPasskey(ctx: *core.Context, id: []const u8) ?*core.Passkey {
     return null;
 }
 
-pub const Begin = struct { challenge: Token, owner: []const u8 };
+/// Any credential at all (including PANEL_PASSWORD)?
+pub fn configured(ctx: *core.Context) bool {
+    return ctx.auth.passkeys.items.len + ctx.auth.passwords.items.len > 0 or core.config.password.len > 0;
+}
 
-/// Registration options. Decides which grant admits this device.
-/// `current`: the request's session, looked up BEFORE its body was read
-/// (std.http forbids touching the headers afterwards).
-pub fn beginRegistration(ctx: *core.Context, current: ?*Session, input: core.RegistrationStart) !Begin {
-    const grant: Grant = if (ctx.auth.passkeys.items.len == 0)
+fn credentialCount(ctx: *core.Context) usize {
+    return ctx.auth.passkeys.items.len + ctx.auth.passwords.items.len + @intFromBool(core.config.password.len > 0);
+}
+
+/// Which grant lets this device add a credential. `current`: the request's
+/// session, looked up BEFORE its body was read (std.http forbids touching the
+/// headers afterwards).
+fn admit(ctx: *core.Context, current: ?*Session, owner: []const u8, invite: []const u8) !Grant {
+    const grant: Grant = if (!configured(ctx))
         .first
     else if (current) |session|
         .{ .session = session.hash }
-    else if (input.invite.len == 0)
+    else if (invite.len == 0)
         return error.InviteRequired
-    else if (checkInvite(ctx, input.invite)) |code|
+    else if (checkInvite(ctx, invite)) |code|
         .{ .invite = code }
     else
         return error.InvalidInvite;
-    if (grant == .first and std.mem.trim(u8, input.owner, " \t\r\n").len == 0) return error.OwnerRequired;
+    if (grant == .first and std.mem.trim(u8, owner, " \t\r\n").len == 0) return error.OwnerRequired;
+    return grant;
+}
+
+fn setOwner(ctx: *core.Context, owner: []const u8) !void {
+    var buf: [96]u8 = undefined;
+    const owned = try A.dupe(u8, cleanLabel(&buf, owner, "Владелец"));
+    A.free(ctx.auth.owner);
+    ctx.auth.owner = owned;
+}
+
+pub const Begin = struct { challenge: Token, owner: []const u8 };
+
+/// Passkey registration options.
+pub fn beginRegistration(ctx: *core.Context, current: ?*Session, input: core.RegistrationStart) !Begin {
     if (ctx.auth.passkeys.items.len >= max_passkeys) return error.TooManyPasskeys;
+    const grant = try admit(ctx, current, input.owner, input.invite);
     return .{ .challenge = newChallenge(ctx, .register, grant), .owner = if (grant == .first) input.owner else ctx.auth.owner };
 }
 
@@ -487,12 +523,7 @@ pub fn register(ctx: *core.Context, arena: std.mem.Allocator, input: core.Regist
     if (!grantValid(ctx, pending.grant)) return error.GrantExpired;
     const result = try passcay.register.verify(arena, .{ .attestation_object = input.attestationObject, .client_data_json = input.clientDataJSON }, .{ .challenge = challenge, .origin = core.config.origin, .rp_id = core.config.rp_id, .require_user_verification = true });
     if (findPasskey(ctx, result.credential_id) != null) return error.AlreadyRegistered;
-    if (pending.grant == .first) {
-        var owner_buf: [96]u8 = undefined;
-        const owner = try A.dupe(u8, cleanLabel(&owner_buf, input.owner, "Владелец"));
-        A.free(ctx.auth.owner);
-        ctx.auth.owner = owner;
-    }
+    if (pending.grant == .first) try setOwner(ctx, input.owner);
     var buf: [96]u8 = undefined;
     const name = cleanLabel(&buf, input.name, providerName(result.aaguid) orelse "Passkey");
     const now = std.time.timestamp();
@@ -518,51 +549,133 @@ pub fn login(ctx: *core.Context, arena: std.mem.Allocator, input: core.LoginInpu
     return createSession(ctx, passkey.id, if (input.device.len > 0) input.device else passkey.name);
 }
 
-pub fn renamePasskey(ctx: *core.Context, id: []const u8, name: []const u8) !void {
-    const passkey = findPasskey(ctx, id) orelse return error.UnknownPasskey;
+// ---------------------------------------------------------------- passwords
+
+fn findPassword(ctx: *core.Context, id: []const u8) ?*core.Password {
+    for (ctx.auth.passwords.items) |*p| if (std.mem.eql(u8, p.id, id)) return p;
+    return null;
+}
+
+/// Runs with ctx.mutex released (argon2 takes ~0.4 s), one hash at a time.
+fn hashPassword(ctx: *core.Context, password: []const u8, out: *[128]u8) ![]const u8 {
+    ctx.mutex.unlock();
+    defer ctx.mutex.lock();
+    ctx.auth.hashing.lock();
+    defer ctx.auth.hashing.unlock();
+    return std.crypto.pwhash.argon2.strHash(password, .{ .allocator = A, .params = password_params, .mode = .argon2id }, out);
+}
+
+/// A new password credential. Returns a session for a device that was not
+/// signed in yet (first credential, invite), null for a signed-in device.
+pub fn createPassword(ctx: *core.Context, current: ?*Session, input: core.PasswordCreateInput) !?Token {
+    if ((std.unicode.utf8CountCodepoints(input.password) catch 0) < min_password_len) return error.PasswordTooShort;
+    if (input.password.len > 256) return error.PasswordTooLong;
+    if (ctx.auth.passwords.items.len >= max_passwords) return error.TooManyPasswords;
+    const grant = try admit(ctx, current, input.owner, input.invite);
+    var hash_buf: [128]u8 = undefined;
+    const hash = try hashPassword(ctx, input.password, &hash_buf);
+    // Re-check after the unlocked hashing: the invite may have been used meanwhile.
+    if (!grantValid(ctx, grant)) return error.GrantExpired;
+    if (grant == .first) try setOwner(ctx, input.owner);
+    var id_raw: [6]u8 = undefined;
+    std.crypto.random.bytes(&id_raw);
+    var id_buf: [15]u8 = undefined;
+    const id = std.fmt.bufPrint(&id_buf, "pw-{s}", .{&std.fmt.bytesToHex(id_raw, .lower)}) catch unreachable;
     var buf: [96]u8 = undefined;
-    const clean = cleanLabel(&buf, name, "");
-    if (clean.len == 0) return error.EmptyName;
-    const owned = try A.dupe(u8, clean);
-    A.free(passkey.name);
-    passkey.name = owned;
+    const name = cleanLabel(&buf, input.name, "Пароль");
+    const now = std.time.timestamp();
+    // Added from a signed-in device: not used to sign in yet.
+    try ctx.auth.passwords.append(A, try dupePassword(.{ .id = id, .name = name, .hash = hash, .created_s = now, .last_used_s = if (grant == .session) 0 else now }));
+    if (grant == .invite) ctx.auth.invite = null; // single use
     try saveAuth(ctx);
+    if (grant == .session) return null;
+    return try createSession(ctx, id, if (input.device.len > 0) input.device else name);
 }
 
-/// Deletes a passkey and signs out every session opened with it.
-/// The last passkey stays: without it nobody could sign in again.
-pub fn removePasskey(ctx: *core.Context, id: []const u8) !void {
-    if (ctx.auth.passkeys.items.len <= 1) return error.LastPasskey;
-    const index = for (ctx.auth.passkeys.items, 0..) |p, i| {
-        if (std.mem.eql(u8, p.id, id)) break i;
-    } else return error.UnknownPasskey;
-    const removed = ctx.auth.passkeys.orderedRemove(index);
-    defer freePasskey(removed);
-    try saveAuth(ctx);
-    _ = try removeSessions(ctx, struct {
-        fn match(s: *const Session, key: []const u8) bool {
-            return std.mem.eql(u8, s.passkey, key);
-        }
-    }.match, removed.id);
-}
-
-/// PANEL_AUTH=password. Digests are compared in constant time; after 5
-/// failures further attempts are refused for 30 s.
-pub fn passwordLogin(ctx: *core.Context, password: []const u8, device: []const u8) !Token {
+/// Accepts PANEL_PASSWORD or any stored password. Stored ones are checked
+/// most recently used first, with ctx.mutex released; after 5 failures further
+/// attempts are refused for 30 s.
+pub fn passwordLogin(ctx: *core.Context, arena: std.mem.Allocator, password: []const u8, device: []const u8) !Token {
     const now = std.time.timestamp();
     if (ctx.auth.failed_logins >= 5 and now - ctx.auth.failed_login_s < 30) return error.TooManyAttempts;
-    var given: [32]u8 = undefined;
-    var expected: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(password, &given, .{});
-    std.crypto.hash.sha2.Sha256.hash(core.config.password, &expected, .{});
-    if (!std.crypto.timing_safe.eql([32]u8, given, expected)) {
+    if (core.config.password.len > 0) {
+        var given: [32]u8 = undefined;
+        var expected: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(password, &given, .{});
+        std.crypto.hash.sha2.Sha256.hash(core.config.password, &expected, .{});
+        if (std.crypto.timing_safe.eql([32]u8, given, expected)) {
+            ctx.auth.failed_logins = 0;
+            return createSession(ctx, env_password_id, device);
+        }
+    }
+    const Candidate = struct { id: []const u8, hash: []const u8, used: i64 };
+    const candidates = try arena.alloc(Candidate, ctx.auth.passwords.items.len);
+    for (ctx.auth.passwords.items, candidates) |p, *c| c.* = .{ .id = try arena.dupe(u8, p.id), .hash = try arena.dupe(u8, p.hash), .used = p.last_used_s };
+    std.mem.sort(Candidate, candidates, {}, struct {
+        fn newer(_: void, a: Candidate, b: Candidate) bool {
+            return a.used > b.used;
+        }
+    }.newer);
+    const match: ?[]const u8 = blk: {
+        ctx.mutex.unlock();
+        defer ctx.mutex.lock();
+        ctx.auth.hashing.lock();
+        defer ctx.auth.hashing.unlock();
+        for (candidates) |c| {
+            std.crypto.pwhash.argon2.strVerify(c.hash, password, .{ .allocator = A }) catch continue;
+            break :blk c.id;
+        }
+        break :blk null;
+    };
+    // Removed while we were checking? Then it no longer counts.
+    const found = if (match) |id| findPassword(ctx, id) else null;
+    const credential = found orelse {
         if (now - ctx.auth.failed_login_s >= 30) ctx.auth.failed_logins = 0;
         ctx.auth.failed_logins += 1;
         ctx.auth.failed_login_s = now;
         return error.WrongPassword;
-    }
+    };
     ctx.auth.failed_logins = 0;
-    return createSession(ctx, "", device);
+    credential.last_used_s = std.time.timestamp();
+    try saveAuth(ctx);
+    return createSession(ctx, credential.id, if (device.len > 0) device else credential.name);
+}
+
+// ---------------------------------------------------------------- any credential
+
+pub fn renameCredential(ctx: *core.Context, id: []const u8, name: []const u8) !void {
+    var buf: [96]u8 = undefined;
+    const clean = cleanLabel(&buf, name, "");
+    if (clean.len == 0) return error.EmptyName;
+    const slot: *[]const u8 = if (findPasskey(ctx, id)) |p| &p.name else if (findPassword(ctx, id)) |p| &p.name else return error.UnknownCredential;
+    const owned = try A.dupe(u8, clean);
+    A.free(slot.*);
+    slot.* = owned;
+    try saveAuth(ctx);
+}
+
+/// Deletes a passkey or password and signs out every session opened with it.
+/// The last way in stays: without it nobody could sign in again.
+pub fn removeCredential(ctx: *core.Context, id: []const u8) !void {
+    if (std.mem.eql(u8, id, env_password_id)) return error.ManagedInEnv;
+    const Found = union(enum) { passkey: usize, password: usize };
+    const found: Found = for (ctx.auth.passkeys.items, 0..) |p, i| {
+        if (std.mem.eql(u8, p.id, id)) break .{ .passkey = i };
+    } else for (ctx.auth.passwords.items, 0..) |p, i| {
+        if (std.mem.eql(u8, p.id, id)) break .{ .password = i };
+    } else return error.UnknownCredential;
+    if (credentialCount(ctx) <= 1) return error.LastCredential;
+    // Sessions first: `id` may point into the record that is freed below.
+    _ = try removeSessions(ctx, struct {
+        fn match(s: *const Session, key: []const u8) bool {
+            return std.mem.eql(u8, s.credential, key);
+        }
+    }.match, id);
+    switch (found) {
+        .passkey => |i| freePasskey(ctx.auth.passkeys.orderedRemove(i)),
+        .password => |i| freePassword(ctx.auth.passwords.orderedRemove(i)),
+    }
+    try saveAuth(ctx);
 }
 
 // ---------------------------------------------------------------- labels
@@ -649,7 +762,7 @@ fn testConfig(dir: []const u8) !void {
             return std.fs.path.join(A, &.{ d, name });
         }
     }.f;
-    core.config = .{ .name = "test", .data_dir = dir, .web_root = dir, .bind = "127.0.0.1", .port = 0, .tls = true, .tls_cert = "", .tls_key = "", .auth = .passkey, .password = "", .origin = "https://panel.test", .rp_id = "panel.test", .auth_path = try join(dir, "auth.json"), .session_path = try join(dir, "session"), .sessions_path = try join(dir, "sessions.json"), .lights_path = try join(dir, "lights.json") };
+    core.config = .{ .name = "test", .data_dir = dir, .web_root = dir, .bind = "127.0.0.1", .port = 0, .tls = true, .tls_cert = "", .tls_key = "", .passkeys = true, .password = "", .origin = "https://panel.test", .rp_id = "panel.test", .auth_path = try join(dir, "auth.json"), .session_path = try join(dir, "session"), .sessions_path = try join(dir, "sessions.json"), .layout_path = try join(dir, "layout.json"), .lights_path = try join(dir, "lights.json") };
 }
 
 test "v1 auth.json and the legacy session file are migrated and survive a reload" {
@@ -668,7 +781,7 @@ test "v1 auth.json and the legacy session file are migrated and survive a reload
     try std.testing.expectEqualStrings("CfSz", ctx.auth.passkeys.items[0].id);
     try std.testing.expectEqual(@as(u32, 3), ctx.auth.passkeys.items[0].sign_count);
     const session = findSessionByToken(&ctx, legacy_token) orelse return error.TestLegacySessionLost;
-    try std.testing.expectEqualStrings("CfSz", session.passkey);
+    try std.testing.expectEqualStrings("CfSz", session.credential);
     try std.testing.expectError(error.FileNotFound, tmp.dir.access("session", .{}));
     // Only the hash of the token is on disk.
     const sessions_json = try tmp.dir.readFileAlloc(A, "sessions.json", 64 * 1024);
@@ -708,7 +821,7 @@ test "sessions: revoke others, the last passkey stays, removing a key signs its 
     var ctx = core.Context{};
     try ctx.auth.passkeys.append(A, try dupePasskey(.{ .id = "mac", .public_key = "k1", .name = "MacBook" }));
     const mac = try createSession(&ctx, "mac", "MacBook · Chrome");
-    try std.testing.expectError(error.LastPasskey, removePasskey(&ctx, "mac"));
+    try std.testing.expectError(error.LastCredential, removeCredential(&ctx, "mac"));
 
     try ctx.auth.passkeys.append(A, try dupePasskey(.{ .id = "phone", .public_key = "k2", .name = "iPhone" }));
     const phone = try createSession(&ctx, "phone", "iPhone · Safari");
@@ -716,11 +829,53 @@ test "sessions: revoke others, the last passkey stays, removing a key signs its 
     try std.testing.expectEqual(@as(usize, 3), ctx.auth.sessions.items.len);
 
     const epoch = ctx.auth.epoch.load(.acquire);
-    try removePasskey(&ctx, "phone");
+    try removeCredential(&ctx, "phone");
     try std.testing.expect(ctx.auth.epoch.load(.acquire) != epoch);
     try std.testing.expect(findSessionByToken(&ctx, &phone) == null);
     const current = findSessionByToken(&ctx, &mac) orelse return error.TestMacSignedOut;
     _ = try createSession(&ctx, "mac", "Firefox");
     try std.testing.expectEqual(@as(usize, 1), try revokeSessions(&ctx, current, null));
     try std.testing.expectEqual(@as(usize, 1), ctx.auth.sessions.items.len);
+}
+
+test "passwords: first setup, sign-in with any of several, wrong ones throttle, env password" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try testConfig(try tmp.dir.realpathAlloc(A, "."));
+    var arena = std.heap.ArenaAllocator.init(A);
+    defer arena.deinit();
+    var ctx = core.Context{};
+    ctx.mutex.lock(); // as in the server: handlers run with the lock held
+    defer ctx.mutex.unlock();
+
+    try std.testing.expectError(error.OwnerRequired, createPassword(&ctx, null, .{ .password = "long enough" }));
+    try std.testing.expectError(error.PasswordTooShort, createPassword(&ctx, null, .{ .owner = "dan", .password = "short" }));
+    const first = (try createPassword(&ctx, null, .{ .owner = "dan", .name = "Ноутбук", .password = "первый пароль" })).?;
+    try std.testing.expectEqualStrings("dan", ctx.auth.owner);
+    try std.testing.expect(std.mem.startsWith(u8, ctx.auth.passwords.items[0].hash, "$argon2id$"));
+    // Now configured: a second device needs an invite or a session.
+    try std.testing.expectError(error.InviteRequired, createPassword(&ctx, null, .{ .password = "второй пароль" }));
+    const invite = createInvite(&ctx);
+    _ = (try createPassword(&ctx, null, .{ .invite = &invite.code, .name = "Телефон", .password = "второй пароль" })).?;
+    try std.testing.expect(activeInvite(&ctx) == null); // used up
+    const mine = findSessionByToken(&ctx, &first).?;
+    try std.testing.expect((try createPassword(&ctx, mine, .{ .name = "Запасной", .password = "третий пароль" })) == null);
+    try std.testing.expectEqual(@as(usize, 3), ctx.auth.passwords.items.len);
+
+    _ = try passwordLogin(&ctx, arena.allocator(), "второй пароль", "Телефон · Chrome");
+    try std.testing.expectError(error.WrongPassword, passwordLogin(&ctx, arena.allocator(), "не тот", ""));
+
+    // Remove two of three; the last one stays.
+    try removeCredential(&ctx, ctx.auth.passwords.items[0].id);
+    try removeCredential(&ctx, ctx.auth.passwords.items[0].id);
+    try std.testing.expectError(error.LastCredential, removeCredential(&ctx, ctx.auth.passwords.items[0].id));
+    try std.testing.expect(findSessionByToken(&ctx, &first) == null); // its credential is gone
+
+    // PANEL_PASSWORD is one more way in and lets the stored one go.
+    core.config.password = "station password";
+    _ = try passwordLogin(&ctx, arena.allocator(), "station password", "");
+    try removeCredential(&ctx, ctx.auth.passwords.items[0].id);
+    try std.testing.expectError(error.ManagedInEnv, removeCredential(&ctx, env_password_id));
+    try std.testing.expectError(error.UnknownCredential, removeCredential(&ctx, "anything"));
+    core.config.password = "";
 }

@@ -1,7 +1,7 @@
 // Fake data for the widget kit and catalog previews.
 import type { ApiClient } from "../api/client";
 import { createFakeLiveClient, type LiveClient } from "../api/live";
-import type { DashboardSnapshot, Metrics } from "../api/types";
+import type { AuthDevices, DashboardSnapshot, Metrics } from "../api/types";
 import type { DataSnapshot } from "./types";
 
 function fakeHistory(): Metrics[] {
@@ -51,15 +51,17 @@ export function fixtureApi(): ApiClient {
   });
   const now = Math.floor(Date.now() / 1000);
   let invited = false;
-  const devices = async () => ({
-    ok: true, mode: "passkey", owner: "demo", now_s: now, invite: invited ? { code: "K7Q2MX4D", expires_in_s: 540 } : null,
-    passkeys: [
-      { id: "mac", name: "MacBook · Chrome", provider: "iCloud Keychain", created_s: now - 9 * 86400, last_used_s: now - 40, sessions: 1, current: true },
-      { id: "phone", name: "vivo X200 Pro · Chrome", provider: "Google Password Manager", created_s: now - 2 * 86400, last_used_s: now - 3 * 3600, sessions: 1, current: false },
+  const devices = async (): Promise<AuthDevices> => ({
+    ok: true, passkey_ready: true, owner: "demo", now_s: now, invite: invited ? { code: "K7Q2MX4D", expires_in_s: 540 } : null,
+    credentials: [
+      { id: "mac", type: "passkey", name: "MacBook · Chrome", provider: "iCloud Keychain", created_s: now - 9 * 86400, last_used_s: now - 40, sessions: 1, current: true, removable: true },
+      { id: "pw-1", type: "password", name: "Рабочий ноутбук", provider: "", created_s: now - 5 * 86400, last_used_s: now - 26 * 3600, sessions: 1, current: false, removable: true },
+      { id: "phone", type: "passkey", name: "vivo X200 Pro · Chrome", provider: "Google Password Manager", created_s: now - 2 * 86400, last_used_s: now - 3 * 3600, sessions: 1, current: false, removable: true },
     ],
     sessions: [
-      { id: "a1", label: "MacBook · Chrome", passkey: "MacBook · Chrome", created_s: now - 9 * 86400, last_seen_s: now, current: true },
-      { id: "b2", label: "vivo X200 Pro · Chrome", passkey: "vivo X200 Pro · Chrome", created_s: now - 2 * 86400, last_seen_s: now - 3 * 3600, current: false },
+      { id: "a1", label: "MacBook · Chrome", credential: "MacBook · Chrome", created_s: now - 9 * 86400, last_seen_s: now, current: true },
+      { id: "c3", label: "Windows · Edge", credential: "Рабочий ноутбук", created_s: now - 5 * 86400, last_seen_s: now - 26 * 3600, current: false },
+      { id: "b2", label: "vivo X200 Pro · Chrome", credential: "vivo X200 Pro · Chrome", created_s: now - 2 * 86400, last_seen_s: now - 3 * 3600, current: false },
     ],
   });
   const invite = async () => { invited = true; return { ok: true, code: "K7Q2MX4D", expires_in_s: 600 }; };

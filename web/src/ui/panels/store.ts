@@ -12,7 +12,11 @@ export interface WidgetInstance {
   config: WidgetConfig;
 }
 export interface Panel { id: string; title: string; widgets: WidgetInstance[] }
-export interface WorkspaceState { version: 2; activePanelId: string; panels: Panel[] }
+export interface WorkspaceState { version: 3; activePanelId: string; panels: Panel[] }
+/** What the station stores and every signed-in device shares; the active screen stays per device. */
+export interface SharedLayout { version: 3; panels: Panel[] }
+/** v2: before the layout lived on the station. */
+type StoredState = { version: 2 | 3; activePanelId?: string; panels: Panel[] };
 
 const STORAGE_KEY = WORKSPACE_KEY;
 /** Widgets that no longer exist; dropped on load. */
@@ -58,25 +62,27 @@ function musicPanel(): Panel {
 }
 
 function defaults(): WorkspaceState {
-  return { version: 2, activePanelId: "home", panels: [homePanel(), monitoringPanel(), musicPanel()] };
+  return { version: 3, activePanelId: "home", panels: [homePanel(), monitoringPanel(), musicPanel()] };
 }
 
-/** Keeps the user's screens, removes retired widgets/screens, adds new screens. */
-function migrate(state: WorkspaceState): WorkspaceState {
-  state.panels = state.panels.filter((p) => !REMOVED_PANELS.has(p.id));
-  for (const panel of state.panels) panel.widgets = panel.widgets.filter((w) => !REMOVED_WIDGETS.has(w.widgetId));
-  for (const make of [monitoringPanel, musicPanel]) {
+/**
+ * Removes retired widgets/screens. A v2 layout also gets the screens added in
+ * v3 — once: screens the user deletes later stay deleted.
+ */
+function upgrade(state: StoredState, activePanelId: string): WorkspaceState {
+  let panels = state.panels.filter((p) => !REMOVED_PANELS.has(p.id));
+  for (const panel of panels) panel.widgets = panel.widgets.filter((w) => !REMOVED_WIDGETS.has(w.widgetId));
+  if (state.version === 2) for (const make of [monitoringPanel, musicPanel]) {
     const panel = make();
-    if (!state.panels.some((p) => p.id === panel.id)) state.panels.push(panel);
+    if (!panels.some((p) => p.id === panel.id)) panels = [...panels, panel];
   }
-  if (!state.panels.length) return defaults();
-  if (!state.panels.some((p) => p.id === state.activePanelId)) state.activePanelId = state.panels[0]!.id;
-  return state;
+  if (!panels.length) return defaults();
+  return { version: 3, activePanelId: panels.some((p) => p.id === activePanelId) ? activePanelId : panels[0]!.id, panels };
 }
 
-function valid(value: unknown): value is WorkspaceState {
-  const v = value as WorkspaceState | null;
-  return Boolean(v && v.version === 2 && Array.isArray(v.panels) && v.panels.length > 0 && v.panels.every((p) => typeof p.id === "string" && Array.isArray(p.widgets)));
+function valid(value: unknown): value is StoredState {
+  const v = value as StoredState | null;
+  return Boolean(v && (v.version === 2 || v.version === 3) && Array.isArray(v.panels) && v.panels.length > 0 && v.panels.every((p) => typeof p.id === "string" && typeof p.title === "string" && Array.isArray(p.widgets)));
 }
 
 export class PanelStore {
@@ -86,9 +92,12 @@ export class PanelStore {
   constructor() {
     const read = (key: string): unknown => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
     const current = read(STORAGE_KEY);
-    this.value = valid(current) ? migrate(current) : defaults();
-    this.save();
+    this.value = valid(current) ? upgrade(current, current.activePanelId ?? "") : defaults();
+    this.persist();
   }
+
+  /** Called after every change other devices should see (not on screen switches). */
+  onChange: (() => void) | null = null;
 
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   get state(): WorkspaceState { return this.value; }
@@ -96,11 +105,27 @@ export class PanelStore {
   active(): Panel { return this.panel(this.value.activePanelId) ?? this.value.panels[0]!; }
   widget(panelId: string, instanceId: string): WidgetInstance | undefined { return this.panel(panelId)?.widgets.find((w) => w.id === instanceId); }
 
-  /** Persist without notifying (used for high-frequency layout writes). */
-  save(): void { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value)); }
+  /** Persist a change (used for high-frequency layout writes) and share it. */
+  save(): void { this.persist(); this.onChange?.(); }
+  private persist(): void { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.value)); } catch { /* storage full or disabled */ } }
+
+  /** The part every device shares. */
+  shared(): SharedLayout { return { version: 3, panels: this.value.panels }; }
+
+  /**
+   * Adopts a layout from the station. Returns ids of the screens that look
+   * different on this device (by `viewKey`), or null if the layout is invalid.
+   */
+  applyShared(layout: unknown, viewKey: (panel: Panel) => string): string[] | null {
+    if (!valid(layout)) return null;
+    const before = new Map(this.value.panels.map((p) => [p.id, viewKey(p)]));
+    this.value = upgrade(structuredClone(layout), this.value.activePanelId);
+    this.persist();
+    return this.value.panels.filter((p) => before.get(p.id) !== viewKey(p)).map((p) => p.id);
+  }
   private commit(): void { this.save(); this.listeners.forEach((l) => l()); }
 
-  setActive(id: string): void { if (this.panel(id) && this.value.activePanelId !== id) { this.value.activePanelId = id; this.save(); } }
+  setActive(id: string): void { if (this.panel(id) && this.value.activePanelId !== id) { this.value.activePanelId = id; this.persist(); } }
   addPanel(title = "Новый экран"): Panel { const panel: Panel = { id: uid(), title, widgets: [] }; this.value.panels.push(panel); this.value.activePanelId = panel.id; this.commit(); return panel; }
   renamePanel(id: string, title: string): void { const p = this.panel(id); if (p && title.trim() && p.title !== title.trim()) { p.title = title.trim(); this.commit(); } }
   removePanel(id: string): void {

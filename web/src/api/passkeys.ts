@@ -1,4 +1,4 @@
-// WebAuthn ceremonies shared by the login screen and "Устройства и ключи".
+// WebAuthn ceremonies shared by the login screen and "Устройства и входы".
 import { ApiRequestError, type ApiClient } from "./client";
 
 function fromBase64Url(value: string): Uint8Array {
@@ -16,6 +16,14 @@ const buffer = (bytes: Uint8Array) => bytes as unknown as BufferSource;
 
 export function passkeysSupported(): boolean {
   return typeof window !== "undefined" && "PublicKeyCredential" in window && "credentials" in navigator;
+}
+
+/**
+ * Passkeys work here: the browser can, the station has them enabled, and the
+ * page is on the passkey origin (not e.g. https://<IP>).
+ */
+export function passkeyUsable(status: { passkey_ready: boolean; origin: string }): boolean {
+  return passkeysSupported() && status.passkey_ready && (!status.origin || status.origin === location.origin);
 }
 
 /** This authenticator already holds a key for the panel (excludeCredentials hit). */
@@ -119,10 +127,15 @@ export function passkeyErrorMessage(error: unknown): string {
     switch (error.code) {
       case "invalid_invite": return "Код не подошёл или истёк. Создайте новый на подключённом устройстве.";
       case "invite_expired": return "Код уже использован или истёк. Создайте новый.";
-      case "invite_required": return "Это устройство ещё не подключено: откройте «Устройства и ключи» на подключённом и отсканируйте QR.";
+      case "invite_required": return "Это устройство ещё не подключено: на подключённом откройте «Устройства и входы» → «Подключить устройство».";
       case "already_registered": return "Этот ключ уже подключён — просто войдите.";
-      case "too_many_passkeys": return "Слишком много ключей: удалите старый в «Устройства и ключи».";
+      case "too_many_credentials": return "Слишком много способов входа: удалите старый в «Устройства и входы».";
       case "UnknownCredential": return "Этот ключ удалён из панели. Подключите устройство заново по коду.";
+      case "password_too_short": return "Пароль — минимум 8 символов.";
+      case "wrong_password": return "Неверный пароль.";
+      case "too_many_attempts": return "Слишком много попыток, подождите 30 секунд.";
+      case "last_credential": return "Это последний способ входа — сначала добавьте другой.";
+      case "managed_in_env": return "Этот пароль задан на станции в panel.env.";
       default: return "Не удалось подтвердить ключ.";
     }
   }

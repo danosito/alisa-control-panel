@@ -2,21 +2,23 @@
 //! `$PANEL_DATA_DIR/panel.env`, see deploy/panel.env.example).
 //!
 //!   PANEL_NAME       display name in the UI and passkey prompts ("Станция")
-//!   PANEL_DATA_DIR   state: auth, session, light settings, TLS files
+//!   PANEL_DATA_DIR   state: passkeys, sessions, shared layout, light settings, TLS files
 //!   PANEL_WEB_ROOT   static files; <root>/assets/* is served at /assets/*
 //!   PANEL_BIND       listen address (0.0.0.0)
 //!   PANEL_PORT       listen port (443 with TLS, 8080 without)
 //!   PANEL_TLS        auto | on | off (auto: on when cert and key exist)
 //!   PANEL_TLS_CERT   PEM chain   (default $PANEL_DATA_DIR/tls/fullchain.pem)
 //!   PANEL_TLS_KEY    PEM key     (default $PANEL_DATA_DIR/tls/privkey.pem)
-//!   PANEL_AUTH       passkey | password (default: passkey with TLS, else password)
-//!   PANEL_PASSWORD   password for PANEL_AUTH=password
-//!   PANEL_ORIGIN     https://panel.example.com  (passkey only)
-//!   PANEL_RP_ID      panel.example.com          (passkey only, defaults to the ORIGIN host)
+//!   PANEL_PASSWORD   optional station password (always accepted, managed here);
+//!                    more passwords and passkeys are added in the web UI
+//!   PANEL_ORIGIN     https://panel.example.com  enables passkeys (they only
+//!                    work on this exact origin)
+//!   PANEL_RP_ID      panel.example.com          (defaults to the ORIGIN host)
+//!   PANEL_AUTH       legacy: "password" turns passkeys off
 const std = @import("std");
 const core = @import("core.zig");
 
-pub const AuthMode = enum { passkey, password };
+pub const AuthMode = enum { passkey, password, any };
 
 pub const Config = struct {
     name: []const u8,
@@ -27,7 +29,8 @@ pub const Config = struct {
     tls: bool,
     tls_cert: []const u8,
     tls_key: []const u8,
-    auth: AuthMode,
+    /// Passkeys usable (PANEL_ORIGIN set); passwords always are.
+    passkeys: bool,
     password: []const u8,
     origin: []const u8,
     rp_id: []const u8,
@@ -35,6 +38,7 @@ pub const Config = struct {
     /// Pre-0.5 single session token, migrated into sessions.json.
     session_path: []const u8,
     sessions_path: []const u8,
+    layout_path: []const u8,
     lights_path: []const u8,
 };
 
@@ -71,9 +75,9 @@ pub fn load() !Config {
         return error.InvalidConfig;
     };
 
-    const auth_text = env("PANEL_AUTH", if (tls) "passkey" else "password");
+    const auth_text = env("PANEL_AUTH", "any");
     const auth = std.meta.stringToEnum(AuthMode, auth_text) orelse {
-        std.log.err("PANEL_AUTH must be passkey or password (got \"{s}\")", .{auth_text});
+        std.log.err("PANEL_AUTH must be any, passkey or password (got \"{s}\")", .{auth_text});
         return error.InvalidConfig;
     };
     const origin = env("PANEL_ORIGIN", "");
@@ -86,19 +90,16 @@ pub fn load() !Config {
         } else |_| {}
     }
     const password = env("PANEL_PASSWORD", "");
-    switch (auth) {
-        .passkey => {
-            if (!tls) std.log.warn("passkeys need HTTPS in the browser: with PANEL_TLS=off only a TLS-terminating reverse proxy works", .{});
-            if (origin.len == 0 or rp_id.len == 0) {
-                std.log.err("PANEL_AUTH=passkey needs PANEL_ORIGIN (e.g. https://panel.example.com) and optionally PANEL_RP_ID", .{});
-                return error.InvalidConfig;
-            }
-        },
-        .password => if (password.len < 8) {
-            std.log.err("PANEL_AUTH=password needs PANEL_PASSWORD with at least 8 characters", .{});
-            return error.InvalidConfig;
-        },
+    if (password.len > 0 and password.len < 8) {
+        std.log.err("PANEL_PASSWORD needs at least 8 characters", .{});
+        return error.InvalidConfig;
     }
+    const passkeys = auth != .password and origin.len > 0 and rp_id.len > 0;
+    if (auth == .passkey and !passkeys) {
+        std.log.err("PANEL_AUTH=passkey needs PANEL_ORIGIN (e.g. https://panel.example.com)", .{});
+        return error.InvalidConfig;
+    }
+    if (passkeys and !tls and !std.mem.startsWith(u8, origin, "http://localhost")) std.log.warn("passkeys need HTTPS in the browser: with PANEL_TLS=off only a TLS-terminating reverse proxy works", .{});
     const port_text = env("PANEL_PORT", if (tls) "443" else "8080");
     const port = std.fmt.parseInt(u16, port_text, 10) catch {
         std.log.err("PANEL_PORT is not a port number: \"{s}\"", .{port_text});
@@ -113,13 +114,14 @@ pub fn load() !Config {
         .tls = tls,
         .tls_cert = tls_cert,
         .tls_key = tls_key,
-        .auth = auth,
+        .passkeys = passkeys,
         .password = password,
         .origin = origin,
         .rp_id = rp_id,
         .auth_path = join(data_dir, "auth.json"),
         .session_path = join(data_dir, "session"),
         .sessions_path = join(data_dir, "sessions.json"),
+        .layout_path = join(data_dir, "layout.json"),
         .lights_path = join(data_dir, "lights.json"),
     };
 }

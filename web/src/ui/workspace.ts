@@ -7,7 +7,8 @@ import { h, svgIcon } from "./dom";
 import { createCatalog } from "./panels/catalog";
 import { PanelView } from "./panels/panelView";
 import { openWidgetSettings } from "./panels/settingsDialog";
-import { PanelStore } from "./panels/store";
+import { createLayoutSync } from "./panels/layoutSync";
+import { type Panel, PanelStore } from "./panels/store";
 
 export interface Workspace {
   el: HTMLElement;
@@ -15,6 +16,8 @@ export interface Workspace {
   setData(data: DataSnapshot): void;
   /** Polling interval the visible widgets need, or null when nothing needs the server. */
   syncIntervalMs(): number | null;
+  /** Shared-layout revision reported by /dashboard. */
+  setLayoutRevision(revision: number): void;
   destroy(): void;
 }
 
@@ -34,8 +37,8 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
   const addScreen = h("button", { class: "topbar__chip", type: "button", onclick: () => { const panel = store.addPanel(); buildViews(); scrollTo(panel.id, false); } }, "+ экран");
   const editButton = h("button", { class: "topbar__icon", type: "button", "aria-label": "Редактировать", title: "Редактировать (долгое нажатие)", onclick: () => setEditing(!editing) }, svgIcon(EDIT_ICON));
   const profileMenu = h("div", { class: "topbar__menu", hidden: true }, h("span", { class: "topbar__owner" }, options.owner ?? "Владелец"),
-    h("button", { type: "button", class: "w-btn", onclick: () => { profileMenu.hidden = true; openDevicesDialog(api, { onSignedOut: options.onLogout }); } }, "Устройства и ключи"),
-    h("button", { type: "button", class: "w-btn", onclick: () => { if (confirm("Вернуть экраны и виджеты к раскладке по умолчанию?")) { store.resetLayout(); for (const view of views.values()) view.destroy(); views.clear(); buildViews(); scrollTo(store.active().id, false); } } }, "Сбросить раскладку"),
+    h("button", { type: "button", class: "w-btn", onclick: () => { profileMenu.hidden = true; openDevicesDialog(api, { onSignedOut: options.onLogout }); } }, "Устройства и входы"),
+    h("button", { type: "button", class: "w-btn", onclick: () => { if (confirm("Вернуть экраны и виджеты к раскладке по умолчанию? Изменится на всех устройствах.")) { store.resetLayout(); for (const view of views.values()) view.destroy(); views.clear(); buildViews(); scrollTo(store.active().id, false); } } }, "Сбросить раскладку"),
     h("button", { type: "button", class: "w-btn", onclick: options.onLogout }, "Выйти"));
   const profile = h("div", { class: "topbar__profile" }, h("button", { class: "topbar__icon", type: "button", "aria-label": "Профиль", onclick: () => { profileMenu.hidden = !profileMenu.hidden; } }, svgIcon(USER_ICON)), profileMenu);
   const left = h("div", { class: "topbar__left" }, tabs);
@@ -43,6 +46,20 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
   const el = h("main", { class: "home", id: "main" }, topbar, strip);
 
   const activeView = () => views.get(store.active().id);
+
+  // The layout lives on the station (not in the demo): every device shows the same screens.
+  const narrow = () => strip.clientWidth > 0 && strip.clientWidth <= 760;
+  const viewKey = (panel: Panel) => JSON.stringify([panel.title, panel.widgets.map((w) => [w.id, w.widgetId, w.config, narrow() ? w.mobile ?? null : w.desktop])]);
+  const layoutSync = options.preview ? null : createLayoutSync(api, store, {
+    canApply: () => !editing && !document.querySelector("dialog[open]"),
+    viewKey,
+    applied: (changed) => {
+      // Only screens that look different here are rebuilt: a terminal elsewhere keeps its session.
+      for (const id of changed) { views.get(id)?.destroy(); views.delete(id); }
+      buildViews();
+      scrollTo(store.active().id, false);
+    },
+  });
 
   function buildViews(): void {
     const ids = new Set(store.state.panels.map((p) => p.id));
@@ -112,7 +129,7 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
     editButton.replaceChildren(editing ? h("span", { class: "topbar__done" }, "Готово") : svgIcon(EDIT_ICON));
     for (const view of views.values()) view.setEditing(editing);
     if (editing) { left.replaceChildren(tabs, addScreen); el.insertBefore(catalog.el, strip); catalog.open(); }
-    else { catalog.close(); catalog.el.remove(); left.replaceChildren(tabs); }
+    else { catalog.close(); catalog.el.remove(); left.replaceChildren(tabs); layoutSync?.resume(); }
     renderTabs();
   }
 
@@ -122,6 +139,7 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
     if (!view || !instance || !definition) return;
     const result = await openWidgetSettings(definition, instance.config, view.currentSize(instanceId) ?? instance.desktop);
     if (result) view.configure(instanceId, result.config, result.size);
+    layoutSync?.resume();
   }
 
   // Long press anywhere on a screen (mouse, trackpad or touch) enters edit mode.
@@ -140,7 +158,7 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
   window.addEventListener("resize", onResize);
 
   // Build after insertion so GridStack can measure real widths.
-  queueMicrotask(() => { buildViews(); scrollTo(store.active().id, false); });
+  queueMicrotask(() => { buildViews(); scrollTo(store.active().id, false); void layoutSync?.start(); });
 
   return {
     el,
@@ -155,6 +173,7 @@ export function createWorkspace(api: ApiClient, live: LiveClient, options: { onL
       }
       return best;
     },
-    destroy() { document.removeEventListener("keydown", onKey); window.removeEventListener("resize", onResize); catalog.close(); for (const view of views.values()) view.destroy(); },
+    setLayoutRevision(revision) { layoutSync?.seen(revision); },
+    destroy() { layoutSync?.destroy(); document.removeEventListener("keydown", onKey); window.removeEventListener("resize", onResize); catalog.close(); for (const view of views.values()) view.destroy(); },
   };
 }

@@ -10,6 +10,7 @@ const audio = @import("audio.zig");
 const lights = @import("lights.zig");
 const bluez = @import("bluez.zig");
 const live = @import("live.zig");
+const layout = @import("layout.zig");
 
 fn acceptCompat(server: *std.net.Server) anyerror!std.net.Server.Connection {
     if (builtin.os.tag != .linux) return server.accept();
@@ -72,6 +73,7 @@ pub fn main() !void {
     core.config = config.load() catch std.process.exit(2);
     var ctx = core.Context{};
     auth.load(&ctx);
+    layout.load(&ctx);
     var hub = audio.Hub{};
     var engine = lights.Engine.init(&hub);
     ctx.hub = &hub;
@@ -95,7 +97,7 @@ pub fn main() !void {
     var address = try std.net.Address.parseIp4(cfg.bind, cfg.port);
     var server = try address.listen(.{ .reuse_address = true });
     defer server.deinit();
-    std.log.info("{s}: listening on {s}://{s}:{d}, auth {t}", .{ cfg.name, if (cfg.tls) "https" else "http", cfg.bind, cfg.port, cfg.auth });
+    std.log.info("{s}: listening on {s}://{s}:{d}, sign-in: passwords{s}", .{ cfg.name, if (cfg.tls) "https" else "http", cfg.bind, cfg.port, if (cfg.passkeys) " + passkeys" else "" });
     while (true) {
         const tcp = acceptCompat(&server) catch |err| { std.log.err("accept failed: {t}", .{err}); continue; };
         const thread = std.Thread.spawn(.{}, serveConnection, .{ tcp, tls_config, &ctx }) catch |err| { std.log.err("connection thread failed: {t}", .{err}); tcp.stream.close(); continue; };

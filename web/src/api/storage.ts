@@ -1,6 +1,6 @@
 // Browser storage keys in one place. The session token lives in
 // localStorage: this device stays signed in (the server can revoke it from
-// "Устройства и ключи"); layouts and caches live there too.
+// "Устройства и входы"); layouts and caches live there too.
 export const SESSION_KEY = "panel.session";
 export const WORKSPACE_KEY = "panel.workspace.v4";
 export const COVERS_KEY = "panel.covers.v1";

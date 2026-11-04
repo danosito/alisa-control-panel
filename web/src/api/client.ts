@@ -47,16 +47,20 @@ export interface ApiClient {
   registrationVerify(payload: { owner?: string; invite?: string; name: string; attestationObject: string; clientDataJSON: string }): Promise<SessionResponse>;
   loginOptions(): Promise<LoginOptions>;
   loginVerify(payload: { credentialId: string; authenticatorData: string; clientDataJSON: string; signature: string; device: string }): Promise<SessionResponse>;
-  /** PANEL_AUTH=password */
   passwordLogin(password: string, device: string): Promise<SessionResponse>;
+  /** New password: first setup {owner}, new device {invite}, signed-in device {} (no new session then). */
+  passwordCreate(payload: { owner?: string; invite?: string; name: string; password: string; device: string }): Promise<Partial<SessionResponse> & { ok: boolean }>;
   /** Ends this browser's session on the server. */
   logout(): Promise<unknown>;
   devices(): Promise<AuthDevices>;
   /** Pairing code for a new device (10 minutes, single use); {cancel} withdraws it. */
   invite(): Promise<InviteInfo & { ok: boolean }>;
   cancelInvite(): Promise<unknown>;
-  renamePasskey(id: string, name: string): Promise<unknown>;
-  removePasskey(id: string): Promise<{ ok: boolean; signed_out: boolean }>;
+  renameCredential(id: string, name: string): Promise<unknown>;
+  removeCredential(id: string): Promise<{ ok: boolean; signed_out: boolean }>;
+  /** Screens and widgets shared by all devices (null until the first upload). */
+  layout(): Promise<{ ok: boolean; revision: number; layout: unknown }>;
+  saveLayout(layout: unknown): Promise<{ ok: boolean; revision: number }>;
   /** One session by id, or every other session when id is omitted. */
   revokeSessions(id?: string): Promise<{ ok: boolean; revoked: number }>;
   bluetoothAction(action: "pairing/start" | "pairing/stop"): Promise<unknown>;
@@ -142,13 +146,17 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     registrationVerify: (payload) => post<SessionResponse>("/auth/register/verify", payload),
     loginOptions: () => post<LoginOptions>("/auth/login/options", {}),
     loginVerify: (payload) => post<SessionResponse>("/auth/login/verify", payload),
-    passwordLogin: (password, device) => post<SessionResponse>("/auth/password/login", { password, device }),
+    // argon2 on the station takes ~0.4 s per stored password.
+    passwordLogin: (password, device) => request<SessionResponse>("POST", "/auth/password/login", { password, device }, 20000),
+    passwordCreate: (payload) => request<Partial<SessionResponse> & { ok: boolean }>("POST", "/auth/password/create", payload, 20000),
     logout: () => post("/auth/logout", {}),
     devices: () => get<AuthDevices>("/auth/devices"),
     invite: () => post<InviteInfo & { ok: boolean }>("/auth/invite", {}),
     cancelInvite: () => post("/auth/invite", { cancel: true }),
-    renamePasskey: (id, name) => post("/auth/passkeys/rename", { id, name }),
-    removePasskey: (id) => post<{ ok: boolean; signed_out: boolean }>("/auth/passkeys/remove", { id }),
+    renameCredential: (id, name) => post("/auth/credentials/rename", { id, name }),
+    removeCredential: (id) => post<{ ok: boolean; signed_out: boolean }>("/auth/credentials/remove", { id }),
+    layout: () => get<{ ok: boolean; revision: number; layout: unknown }>("/layout"),
+    saveLayout: (layout) => post<{ ok: boolean; revision: number }>("/layout", { layout }),
     revokeSessions: (id) => post<{ ok: boolean; revoked: number }>("/auth/sessions/revoke", id ? { id } : {}),
     bluetoothAction: (action) => post(`/bluetooth/${action}`, {}),
     // BlueZ Connect waits for the remote side: allow ~25 s.

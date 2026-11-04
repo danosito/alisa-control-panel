@@ -60,7 +60,7 @@ export function mountApp({ api, root }: AppOptions): App {
     const due = force || interval !== null;
     if (due && !inFlight && document.visibilityState === "visible") {
       inFlight = true;
-      try { workspace.setData(toData(await api.dashboard())); }
+      try { const snapshot = await api.dashboard(); workspace.setData(toData(snapshot)); workspace.setLayoutRevision(snapshot.layout_revision ?? 0); }
       catch (error) { if (error instanceof ApiRequestError && error.status === 401) { logout(false); return; } }
       finally { inFlight = false; }
     }
@@ -72,6 +72,9 @@ export function mountApp({ api, root }: AppOptions): App {
   // The live socket was closed because this device was signed out elsewhere.
   const onSignedOut = () => { if (workspace) logout(false); };
   window.addEventListener("panel:signed-out", onSignedOut);
+  // A pairing link pasted into an open login tab only changes the hash.
+  const onHash = () => { if (!workspace && pairingCodeFromUrl()) mountAuth(); };
+  window.addEventListener("hashchange", onHash);
 
   void (async () => {
     try {
@@ -86,5 +89,5 @@ export function mountApp({ api, root }: AppOptions): App {
     } catch (error) { mountAuth(describeFailure(error)); }
   })();
 
-  return { stop() { stopped = true; window.clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("panel:signed-out", onSignedOut); workspace?.destroy(); } };
+  return { stop() { stopped = true; window.clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("panel:signed-out", onSignedOut); window.removeEventListener("hashchange", onHash); workspace?.destroy(); } };
 }

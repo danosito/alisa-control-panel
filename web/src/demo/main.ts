@@ -1,8 +1,8 @@
 // Demo: the real interface on fake data, no station needed.
 // Build: npm run demo -> web/dist/demo.html (open via any static HTTP server).
 //   demo.html                 workspace (Главная / Мониторинг / Музыка)
-//   demo.html?screen=login    login screen (password)
-//   demo.html?screen=signin   passkey sign-in; ?screen=pair  pairing a new device
+//   demo.html?screen=login    sign-in, passwords only;  ?screen=signin  passkey or password
+//   demo.html?screen=setup    first setup;              ?screen=pair    pairing a new device
 import type { Metrics } from "../api/types";
 import { createAuthScreen } from "../ui/authScreen";
 import { h } from "../ui/dom";
@@ -20,9 +20,9 @@ const root = document.getElementById("app")!;
 const api = fixtureApi();
 
 const screenParam = new URLSearchParams(location.search).get("screen");
-if (screenParam === "login" || screenParam === "signin" || screenParam === "pair") {
+if (screenParam === "login" || screenParam === "signin" || screenParam === "setup" || screenParam === "pair") {
   const screen = createAuthScreen(api, () => undefined, { pairingCode: screenParam === "pair" ? "K7Q2MX4D" : null });
-  screen.setStatus({ configured: true, owner: "", passkeys: 1, mode: screenParam === "login" ? "password" : "passkey", name: "Станция" });
+  screen.setStatus({ configured: screenParam !== "setup", owner: "", name: "Станция", passkey_ready: screenParam !== "login", origin: location.origin, passkeys: screenParam === "login" ? 0 : 1, passwords: 1 });
   root.replaceChildren(h("div", { class: "app-shell" }, screen.el));
 } else {
   const live = fixtureLive(playbackRecording);

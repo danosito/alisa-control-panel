@@ -24,13 +24,18 @@ export interface Capabilities {
 }
 
 export interface AuthStatus {
+  /** Any sign-in method exists (otherwise the first visit sets one up). */
   configured: boolean;
   owner: string;
-  passkeys: number;
-  /** PANEL_AUTH on the server. */
-  mode: "passkey" | "password";
   /** PANEL_NAME: shown in the title and on the login screen. */
   name: string;
+  /** Passkeys enabled on the station (PANEL_ORIGIN set). */
+  passkey_ready: boolean;
+  /** Passkeys only work on exactly this origin. */
+  origin: string;
+  passkeys: number;
+  /** Including PANEL_PASSWORD. */
+  passwords: number;
 }
 
 export interface RegistrationOptions {
@@ -65,26 +70,28 @@ export interface SessionResponse {
   session: string;
 }
 
-/** A registered passkey (one per device or password manager). */
-export interface PasskeyInfo {
+/** A way to sign in: a passkey or a password, usually one per device. */
+export interface CredentialInfo {
   id: string;
+  type: "passkey" | "password";
   name: string;
-  /** Password manager / platform by AAGUID: "iCloud Keychain", "Windows Hello", or "". */
+  /** Passkey: password manager by AAGUID ("iCloud Keychain"); password: "panel.env" for PANEL_PASSWORD. */
   provider: string;
   created_s: number;
   last_used_s: number;
-  /** Signed-in browsers that use this key. */
+  /** Signed-in browsers that use it. */
   sessions: number;
-  /** The key this browser signed in with. */
+  /** The one this browser signed in with. */
   current: boolean;
+  removable: boolean;
 }
 
 /** A signed-in browser. */
 export interface SessionInfo {
   id: string;
   label: string;
-  /** Name of the passkey it signed in with ("" in password mode). */
-  passkey: string;
+  /** Name of the passkey or password it signed in with. */
+  credential: string;
   created_s: number;
   last_seen_s: number;
   current: boolean;
@@ -94,9 +101,9 @@ export interface InviteInfo { code: string; expires_in_s: number }
 
 export interface AuthDevices {
   ok: boolean;
-  mode: "passkey" | "password";
+  passkey_ready: boolean;
   owner: string;
-  passkeys: PasskeyInfo[];
+  credentials: CredentialInfo[];
   sessions: SessionInfo[];
   invite: InviteInfo | null;
   /** Server clock, for "5 мин назад" without trusting this device's clock. */
@@ -156,6 +163,8 @@ export interface DashboardSnapshot {
   bluetooth_devices: BluetoothDevice[];
   media: MediaState;
   system: SystemInfo;
+  /** Revision of the shared layout (GET /layout when it changes). */
+  layout_revision?: number;
 }
 
 /** Body returned with a non-2xx status, e.g. 501 adapter_pending. */

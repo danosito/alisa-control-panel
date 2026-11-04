@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
     // Unit tests of the device-independent parts (host target):
     //   zig build test
     const test_step = b.step("test", "Run unit tests");
-    for ([_][]const u8{ "src/bluez.zig", "src/audio.zig", "src/lights.zig", "src/auth.zig" }) |file| {
+    for ([_][]const u8{ "src/bluez.zig", "src/audio.zig", "src/lights.zig", "src/auth.zig", "src/layout.zig" }) |file| {
         const module = b.createModule(.{ .root_source_file = b.path(file), .target = b.graph.host, .link_libc = true });
         module.addImport("passcay", b.dependency("passcay", .{ .target = b.graph.host }).module("passcay"));
         const tests = b.addTest(.{ .root_module = module });
