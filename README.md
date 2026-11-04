@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/Zig-0.15-f7a41d?logo=zig&logoColor=white" alt="">
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white" alt="">
   <img src="https://img.shields.io/badge/зависимостей_на_станции-0-22c55e" alt="">
+  <img src="https://img.shields.io/badge/лицензия-MIT-blue" alt="">
 </p>
 
 ![Главная](docs/screenshots/home.webp)
@@ -124,3 +125,5 @@ npm run check     # типы
 Терминал — это root на станции. Не выставляйте панель в интернет без входа; снаружи — только HTTPS + passkey или VPN.
 
 Внутри: [passcay](https://github.com/uzyn/passcay) (WebAuthn, MIT), [tls.zig](https://github.com/ianic/tls.zig), [xterm.js](https://xtermjs.org), [GridStack](https://gridstackjs.com), [uPlot](https://github.com/leeoniya/uPlot), [iro.js](https://iro.js.org). Подробности про Bluetooth-звук и macOS — в [docs/bluetooth-audio.md](docs/bluetooth-audio.md).
+
+Лицензия — [MIT](LICENSE).
